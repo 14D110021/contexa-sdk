@@ -13,6 +13,7 @@ This checklist tracks the documentation status for the Contexa SDK. The SDK prov
 - [x] `README_RUNTIME.md` - Agent runtime documentation
 - [x] `README_MCP.md` - MCP integration documentation
 - [x] `README_OBSERVABILITY.md` - Observability features documentation
+- [x] `ONBOARDING.md` - Guide for new developers to understand the codebase
 
 ### Core Module Docstrings
 

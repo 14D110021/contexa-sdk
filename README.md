@@ -136,6 +136,7 @@ For more detailed documentation, see the following guides:
 - [Agent Runtime](README_RUNTIME.md)
 - [Observability](README_OBSERVABILITY.md)
 - [MCP Integration](README_MCP.md)
+- [New Developer Onboarding](ONBOARDING.md)
 
 ## Examples
 
