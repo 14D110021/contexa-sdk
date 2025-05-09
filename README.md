@@ -149,6 +149,23 @@ The `examples/` directory contains various examples demonstrating different feat
 - [Observability Setup](examples/observability_example.py)
 - [MCP Integration](examples/mcp_agent_example.py)
 
+### Advanced AI Agent Examples
+
+We've included several complex AI agent examples that demonstrate the full capabilities of Contexa SDK across multiple frameworks:
+
+- [Financial Analysis Agent (LangChain)](examples/financial_analysis_agent.py): A financial analysis agent that extracts data from PDF reports, calculates financial metrics, creates visualizations, and provides analysis.
+
+- [Content Creation Pipeline (CrewAI)](examples/content_creation_crew.py): A multi-agent workflow for content creation including research, writing, editing, and SEO optimization, orchestrated using CrewAI.
+
+- [Customer Support Agent (OpenAI)](examples/customer_support_agent.py): A comprehensive customer support agent that integrates with knowledge bases, ticket systems, and order tracking using OpenAI function calling.
+
+These examples showcase:
+- Framework-specific adaptations
+- Advanced tool usage
+- Multi-agent coordination
+- Complex system integrations
+- Real-world use cases
+
 ## Contributing
 
 Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for more information.

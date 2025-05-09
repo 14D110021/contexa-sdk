@@ -43,7 +43,9 @@ This checklist tracks the documentation status for the Contexa SDK. The SDK prov
 1. ✅ Enhance docstrings for core modules (completed)
 2. Add docstrings to adapter modules
 3. Add docstrings to runtime, observability, and deployment modules
-4. Create tutorials and examples in the `examples` directory
+4. ✅ Create tutorials and examples in the `examples` directory (completed)
+   - ✅ Basic examples: search agent, agent handoff, MCP integration
+   - ✅ Advanced examples: financial analysis, content creation, customer support
 5. Add API reference documentation using Sphinx or another documentation tool
 
 ## Documentation Standards
