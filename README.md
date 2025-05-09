@@ -1,21 +1,32 @@
 # Contexa SDK
 
-The Contexa SDK is a comprehensive framework for building, deploying, and managing AI agents. It provides a unified interface for working with different AI frameworks and enables seamless agent handoffs, multi-framework integration, observability, and robust runtime management.
+**Contexa SDK** is a comprehensive framework for standardizing AI agent development, deployment, and interoperability across multiple frameworks. It provides a unified layer that enables agent components (tools, models, prompts, etc.) to be seamlessly converted between different agent frameworks like LangChain, CrewAI, OpenAI Agent SDK, and Google ADK.
 
-## Key Features
+## Mission
 
-### Core Agent System
+At Contexa, we're building a standardized "context layer" for AI agents. Our SDK allows any AI agent to easily access external tools, APIs, and data through a universal protocol (the open Model Context Protocol, or MCP). By standardizing the agent layer one component at a time, we enable:
 
-- **Unified Agent Interface**: Abstract away underlying AI frameworks with a standardized agent interface
-- **Tool Management**: Create, customize, and share tools between agents
-- **Memory Systems**: Implement memory for context preservation and reasoning
-- **Model Integration**: Connect to various AI models with a consistent API
+- **Write Once, Run Anywhere**: Define your tools, models, and agents once and use them across any supported framework
+- **Seamless Deployment**: Package and deploy your agents to versioned endpoints with a single command
+- **Framework Interoperability**: Enable cross-framework agent handoffs and collaboration
+- **Observability**: Monitor and trace agent activities with structured logging and metrics
 
-### Multi-Framework Support
+## Core Features
 
-- **Framework Adapters**: Integrate with LangChain, CrewAI, OpenAI, and Google ADK
-- **Cross-Framework Handoffs**: Seamlessly transfer control between agents built on different frameworks
-- **Context Preservation**: Maintain conversation history and state during handoffs
+### Unified Core Objects
+
+- **Tools**: Define tools once and use them in any framework
+- **Models**: Wrap any LLM/chat API with a consistent interface
+- **Agents**: Build framework-agnostic agent definitions
+- **Prompts**: Create reusable prompt templates
+
+### Multi-Framework Adapters
+
+Convert Contexa objects to native framework objects for:
+- LangChain (≥0.1)
+- CrewAI (≥0.110)
+- OpenAI Agents SDK (≥0.4)
+- Google ADK (≥0.3)
 
 ### Agent Runtime
 
@@ -26,7 +37,7 @@ The Contexa SDK is a comprehensive framework for building, deploying, and managi
 
 ### Observability
 
-- **Structured Logging**: Track agent operations with detailed logs
+- **Structured Logging**: Track agent operations in detail
 - **Metrics Collection**: Monitor performance and usage metrics
 - **Tracing**: Follow request flows through multiple agents
 - **OpenTelemetry Compatible**: Integrate with existing observability stacks
@@ -40,44 +51,80 @@ The Contexa SDK is a comprehensive framework for building, deploying, and managi
 ## Installation
 
 ```bash
+# Install core SDK
 pip install contexa-sdk
+
+# Install with specific framework support
+pip install contexa-sdk[langchain]  # For LangChain support
+pip install contexa-sdk[crewai]     # For CrewAI support
+pip install contexa-sdk[openai]     # For OpenAI Agents SDK support
+pip install contexa-sdk[google-adk] # For Google ADK support
+
+# Install with all framework support
+pip install contexa-sdk[all]
 ```
 
 ## Quick Start
 
+### 1. Define a Tool
+
 ```python
-import asyncio
+from contexa_sdk.core.tool import ContexaTool
+from pydantic import BaseModel
+
+class SearchInput(BaseModel):
+    query: str
+
+@ContexaTool.register(
+    name="web_search",
+    description="Search the web and return text snippet"
+)
+async def web_search(inp: SearchInput) -> str:
+    return f"Top hit for {inp.query}"
+```
+
+### 2. Create an Agent
+
+```python
 from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.core.model import Model
-from contexa_sdk.core.tool import Tool
+from contexa_sdk.core.model import ContexaModel
 
-# Define a simple model
-class MyModel(Model):
-    async def generate(self, prompt, **kwargs):
-        return {"text": f"Response to: {prompt}"}
-
-# Define a simple tool
-class GreetingTool(Tool):
-    name = "greeting"
-    description = "Greet the user"
-    
-    async def execute(self, name="User", **kwargs):
-        return {"message": f"Hello, {name}!"}
-
-# Create an agent
+# Create an agent with our tool
 agent = ContexaAgent(
     name="My Assistant",
     description="A helpful assistant",
-    model=MyModel(),
-    tools=[GreetingTool()]
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[web_search]
 )
+```
 
-# Run the agent
-async def main():
-    response = await agent.run("Can you greet me?")
-    print(response)
+### 3. Use with Different Frameworks
 
-asyncio.run(main())
+```python
+# LangChain
+from contexa_sdk.adapters import langchain
+lc_agent = langchain.agent(agent)
+result = await lc_agent.invoke("What's new in AI?")
+
+# CrewAI
+from contexa_sdk.adapters import crewai
+crew_agent = crewai.agent(agent)
+result = await crew_agent.run("What's new in AI?")
+
+# OpenAI
+from contexa_sdk.adapters import openai
+oa_agent = openai.agent(agent)
+result = await oa_agent.execute("What's new in AI?")
+```
+
+### 4. Deploy Your Agent
+
+```bash
+# Build and deploy your agent
+ctx build
+ctx deploy
+
+# Output: https://api.contexa.ai/v0/ctx/my-org/my-agent:8f3ad1
 ```
 
 ## Documentation
@@ -94,11 +141,13 @@ For more detailed documentation, see the following guides:
 
 The `examples/` directory contains various examples demonstrating different features:
 
-- Basic agent usage
-- Multi-framework handoffs
-- Runtime management
-- Observability setup
-- MCP integration
+- [Basic Agent Usage](examples/search_agent.py)
+- [Multi-Framework Integration](examples/multi_framework_integration.py)
+- [Agent Handoff](examples/agent_handoff.py)
+- [Runtime Management](examples/runtime_example.py)
+- [Cluster Runtime](examples/cluster_runtime_example.py)
+- [Observability Setup](examples/observability_example.py)
+- [MCP Integration](examples/mcp_agent_example.py)
 
 ## Contributing
 

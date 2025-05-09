@@ -1,144 +1,243 @@
-# MCP Integration with Contexa SDK
+# MCP Integration
 
-This document describes how to use the Multi-Channel Protocol (MCP) integration features of the Contexa SDK. The Contexa SDK allows you to create and use agents that can communicate using the MCP protocol, enabling seamless integration with other MCP-compatible systems.
+The Contexa SDK provides comprehensive support for the [Model Context Protocol (MCP)](https://github.com/mctlab/model-context-protocol), an open standard for AI models to access external tools, data, and services.
 
-## Overview
+## What is MCP?
 
-The Contexa SDK provides full MCP support for agent-to-agent communication, allowing you to:
+MCP (Model Context Protocol) is a standardized protocol that enables AI models and agents to interact with external tools and services in a consistent way. It defines:
 
-1. **Build MCP-compatible agent servers** - Package your Contexa agents as standalone servers following the MCP protocol
-2. **Use remote MCP agents** - Connect to and interact with remote agents via the MCP protocol
-3. **Register in MCP registries** - Make your agents discoverable through MCP registries
-4. **Perform agent handoffs** - Transfer tasks between local and remote agents while preserving context
+- How tools describe their capabilities (function specs)
+- How agents make requests to tools
+- How tools return structured responses
+- Security and authentication mechanisms
 
-## Creating an MCP-compatible Agent Server
+## Key MCP Features in Contexa SDK
 
-To create an MCP-compatible agent server, you can use the `build_agent` function with the `mcp_compatible` parameter set to `True`:
+### Using Remote MCP Tools
+
+Use any MCP-compatible tool with your Contexa agents:
 
 ```python
-from contexa_sdk.core import ContexaAgent
-from contexa_sdk.deployment import build_agent, deploy_agent
+from contexa_sdk.core.tool import RemoteTool
+from pydantic import BaseModel
 
-# Create your agent
-agent = ContexaAgent(...)
+# Define the schema for the tool input
+class SearchInput(BaseModel):
+    query: str
 
-# Build the agent as an MCP-compatible server
-agent_path = build_agent(
-    agent=agent,
-    output_dir="./build",
-    version="0.1.0",
-    mcp_compatible=True,  # Enable MCP compatibility
-    mcp_version="1.0"     # Specify the MCP version to use
+# Create a remote tool that connects to an MCP endpoint
+search_tool = RemoteTool(
+    endpoint_url="https://api.example.com/mcp/search",
+    name="web_search",
+    description="Search the web for information",
+    schema=SearchInput
 )
 
-# Deploy the agent
-deployment = deploy_agent(
-    agent_path=agent_path,
-    register_as_mcp=True  # Register in the MCP registry
+# Use it like any other Contexa tool
+from contexa_sdk.core.agent import ContexaAgent
+from contexa_sdk.core.model import ContexaModel
+
+agent = ContexaAgent(
+    name="Research Assistant",
+    description="Helps with online research",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[search_tool]
 )
 
-# The agent is now available at the endpoint URL
-print(f"MCP Agent endpoint: {deployment['endpoint_url']}")
+# Run the agent
+result = await agent.run("Find information about climate change")
 ```
 
-## Using a Remote MCP Agent
+### Creating MCP-Compatible Tools
 
-To use a remote MCP agent, you can use the `RemoteAgent` class:
+Convert your Python functions into MCP-compatible endpoints:
 
 ```python
-import asyncio
-from contexa_sdk.core import RemoteAgent
+from contexa_sdk.core.tool import ContexaTool
+from contexa_sdk.deployment.mcp_server import MCPServer
+from pydantic import BaseModel
 
-async def main():
-    # Create a RemoteAgent from an endpoint URL
-    agent = await RemoteAgent.from_endpoint("https://api.example.com/v0/mcp/my-agent")
-    
-    # Use the agent as if it were a local agent
-    response = await agent.run("What's the weather like in San Francisco?")
-    print(response)
-    
-    # You can also use the agent's tools
-    # The tools are automatically discovered from the remote agent
+# Define a tool
+class WeatherInput(BaseModel):
+    location: str
+    unit: str = "celsius"
 
-if __name__ == "__main__":
-    asyncio.run(main())
+@ContexaTool.register(
+    name="get_weather",
+    description="Get current weather for a location"
+)
+async def get_weather(inp: WeatherInput) -> str:
+    # Implementation logic
+    return f"The weather in {inp.location} is 22°{inp.unit}"
+
+# Create an MCP server with our tool
+server = MCPServer(tools=[get_weather])
+
+# Run the server
+await server.start(host="0.0.0.0", port=8000)
 ```
 
-## Agent Handoffs
+This exposes an MCP-compatible endpoint at `http://localhost:8000/v1/tools/get_weather`.
 
-You can perform handoffs between local and remote agents:
+### Tool Discovery
+
+Discover available tools on an MCP server:
 
 ```python
-import asyncio
-from contexa_sdk.core import ContexaAgent, RemoteAgent
+from contexa_sdk.client.mcp import MCPClient
 
-async def main():
-    # Create or load a local agent
-    local_agent = ContexaAgent(...)
-    
-    # Create a remote agent
-    remote_agent = await RemoteAgent.from_endpoint("https://api.example.com/v0/mcp/another-agent")
-    
-    # Perform a task with the local agent
-    local_result = await local_agent.run("Find information about electric cars")
-    
-    # Hand off to the remote agent
-    remote_result = await local_agent.handoff_to(
-        target_agent=remote_agent,
-        query="Based on that information, what are the best electric cars for families?",
-        include_history=True  # Include the conversation history
-    )
-    
-    print(remote_result)
+# Create an MCP client
+client = MCPClient(base_url="https://api.example.com/mcp")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Discover available tools
+tools = await client.list_tools()
+
+for tool in tools:
+    print(f"Tool: {tool.name}")
+    print(f"Description: {tool.description}")
+    print(f"Schema: {tool.schema}")
+    print("---")
 ```
 
-## MCP Registry Integration
+### Agent as MCP Server
 
-The Contexa SDK supports registering your agents in MCP registries, making them discoverable by other systems:
+Expose your entire agent as an MCP-compatible service:
 
 ```python
-from contexa_sdk.deployment import list_mcp_agents
+from contexa_sdk.deployment.agent_mcp_server import AgentMCPServer
 
-# List all MCP agents in your account
-agents = list_mcp_agents()
-for agent in agents:
-    print(f"Agent: {agent['endpoint_id']}")
-    print(f"URL: {agent['endpoint_url']}")
-    print(f"MCP Version: {agent.get('mcp_version', '1.0')}")
-    print()
+# Create an MCP server for your agent
+server = AgentMCPServer(agent=my_agent)
+
+# Start the server
+await server.start(host="0.0.0.0", port=8000)
 ```
 
-## Full Example
+This allows other systems to interact with your agent through the MCP protocol.
 
-See the `examples/mcp_agent_example.py` file for a complete working example of MCP integration with the Contexa SDK.
+## MCP Client
 
-## Technical Details
+The SDK includes a client for interacting with MCP servers:
 
-### MCP Protocol Version
+```python
+from contexa_sdk.client.mcp import MCPClient
 
-The Contexa SDK currently supports MCP version 1.0.
+# Create an MCP client
+client = MCPClient(
+    base_url="https://api.example.com/mcp",
+    api_key="your-api-key"  # Optional
+)
 
-### MCP Endpoints
+# Call a tool
+response = await client.call_tool(
+    tool_name="web_search",
+    inputs={"query": "latest AI research"}
+)
 
-MCP-compatible agents expose the following endpoints:
+print(response)
+```
 
-- `/mcp/run` - Run the agent with a query
-- `/mcp/handoff` - Receive a handoff from another agent
-- `/mcp/tools` - Get the list of tools available to the agent
-- `/mcp/metadata` - Get metadata about the agent
+## MCP Authentication
 
-### OpenAPI Specification
+The SDK supports various authentication methods for MCP:
 
-Each MCP-compatible agent includes an OpenAPI specification at `/openapi.json` that documents the agent's capabilities and endpoints, with MCP-specific extensions.
+```python
+# API Key Authentication
+client = MCPClient(
+    base_url="https://api.example.com/mcp",
+    api_key="your-api-key"
+)
 
-## Future Enhancements
+# Bearer Token Authentication
+client = MCPClient(
+    base_url="https://api.example.com/mcp",
+    auth_token="your-bearer-token"
+)
 
-We plan to enhance the MCP integration in future releases with:
+# Custom Headers
+client = MCPClient(
+    base_url="https://api.example.com/mcp",
+    headers={"X-Custom-Auth": "value"}
+)
+```
 
-1. **MCP Tool Discovery** - Automatically discover and use tools from remote MCP agents
-2. **Enhanced Registry Integration** - Improved integration with MCP registries
-3. **Agent Orchestration** - Built-in support for orchestrating multiple MCP agents
-4. **Authentication** - Enhanced authentication mechanisms for MCP endpoints 
+## OpenAPI Integration
+
+Convert OpenAPI specifications to MCP tools:
+
+```python
+from contexa_sdk.tools.openapi import create_mcp_tools_from_openapi
+
+# Create MCP tools from an OpenAPI spec
+tools = await create_mcp_tools_from_openapi(
+    openapi_url="https://api.example.com/openapi.json",
+    base_url="https://api.example.com",
+    api_key="your-api-key"  # Optional
+)
+
+# Use these tools with an agent
+agent = ContexaAgent(
+    name="API Assistant",
+    description="Helps interact with APIs",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=tools
+)
+```
+
+## MCP Tool Registry
+
+Register and discover MCP tools across your organization:
+
+```python
+from contexa_sdk.registry.mcp import MCPToolRegistry
+
+# Create or connect to a registry
+registry = MCPToolRegistry(
+    url="https://registry.example.com",
+    api_key="your-api-key"
+)
+
+# Register a tool
+await registry.register_tool(
+    name="weather_tool",
+    description="Get weather information",
+    endpoint_url="https://api.example.com/mcp/weather",
+    schema=WeatherInput
+)
+
+# Discover tools
+tools = await registry.search_tools(query="weather")
+
+# Incorporate discovered tools into an agent
+agent = ContexaAgent(
+    name="Weather Assistant",
+    description="Helps with weather queries",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=tools
+)
+```
+
+## MCP Version Compatibility
+
+The SDK supports multiple versions of the MCP protocol:
+
+```python
+# Specify MCP version for a server
+server = MCPServer(
+    tools=[get_weather],
+    mcp_version="1.0"
+)
+
+# Specify MCP version for a client
+client = MCPClient(
+    base_url="https://api.example.com/mcp",
+    mcp_version="1.0"
+)
+```
+
+## Examples
+
+For complete examples of MCP integration, see:
+- [MCP Agent Example](examples/mcp_agent_example.py)
+- [MCP Tool Server Example](examples/mcp_tool_server_example.py)
+- [OpenAPI to MCP Example](examples/openapi_to_mcp_example.py) 

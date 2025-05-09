@@ -1,197 +1,282 @@
-# Observability in Contexa SDK
+# Observability
 
-The Contexa SDK provides comprehensive observability features to monitor and debug your agents. These features give you detailed insights into agent executions, tool calls, model responses, and more.
+The Contexa SDK provides comprehensive observability capabilities for monitoring, debugging, and analyzing agent behavior. These features help developers understand what's happening inside their agents, identify issues, and optimize performance.
 
-## Overview
+## Key Observability Features
 
-The observability module includes three main components:
-
-1. **Logging** - Structured logs with context information
-2. **Tracing** - Distributed tracing for detailed execution paths
-3. **Metrics** - Performance and operational metrics
+- **Structured Logging**: Track agent operations with detailed, structured logs
+- **Metrics Collection**: Monitor performance and usage metrics
+- **Tracing**: Follow request flows through multiple agents and tools
+- **OpenTelemetry Compatible**: Integrate with existing observability stacks
 
 ## Logging
 
-The logging system provides structured logs with rich context information. This makes it easier to understand what's happening with your agents and helps with debugging.
-
-### Basic Usage
+### Basic Logging Setup
 
 ```python
-from contexa_sdk.observability import get_logger
+from contexa_sdk.observability.logging import configure_logging
 
-# Create a logger for your module
-logger = get_logger(__name__)
+# Configure basic logging
+configure_logging(
+    level="INFO",  # Log level: DEBUG, INFO, WARNING, ERROR
+    output_format="json",  # Output format: json or text
+    log_file="agent.log"  # Optional file to write logs
+)
 
-# Log various levels with context
-logger.info("Agent starting", extra={"agent_id": agent_id})
-logger.error("Connection failed", extra={"endpoint": url, "status_code": 500})
+# Create an agent with logging
+from contexa_sdk.core.agent import ContexaAgent
+from contexa_sdk.core.model import ContexaModel
 
-# Log with structured context
-logger.info_with_context("Operation completed", {
-    "operation_id": "123",
-    "duration_ms": 456,
-    "user_id": "user-789"
-})
+agent = ContexaAgent(
+    name="My Assistant",
+    description="A helpful assistant",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[],
+    enable_logging=True  # Enable detailed logging
+)
 ```
 
-### Configuration
+### Structured Log Events
 
-Control logging behavior with environment variables:
+The SDK generates structured logs for key events:
 
-- `CONTEXA_LOG_LEVEL` - Sets the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `CONTEXA_LOG_FORMAT` - Sets the log format (default: text, JSON for structured output)
-
-```bash
-export CONTEXA_LOG_LEVEL=DEBUG
-export CONTEXA_LOG_FORMAT=JSON
+```json
+{
+  "timestamp": "2023-05-15T14:32:17Z",
+  "level": "INFO",
+  "event": "agent.run.start",
+  "agent_id": "agent-1234",
+  "agent_name": "My Assistant",
+  "input": "What's the weather today?",
+  "trace_id": "trace-5678"
+}
 ```
 
-## Tracing
+### Custom Log Events
 
-Tracing provides detailed information about the execution path of your agents, including timing, relationships between operations, and more.
-
-### Basic Usage
+Add custom log events for your specific needs:
 
 ```python
-from contexa_sdk.observability import trace, Span, SpanKind
+from contexa_sdk.observability.logging import log_event
 
-# Decorate functions to automatically trace them
-@trace(kind=SpanKind.AGENT)
-async def my_agent_function(query):
-    # Will be automatically traced
-    return result
-
-# Use spans manually for more control
-with Span(name="my_operation", kind=SpanKind.TOOL) as span:
-    # Set attributes to add context
-    span.set_attribute("operation.type", "database_query")
-    span.set_attribute("query.parameters", json.dumps(params))
-    
-    # Perform the operation
-    result = await perform_operation()
-    
-    # Record the result
-    span.set_attribute("operation.result", "success" if result else "failure")
-```
-
-### Span Types
-
-The SDK defines several span kinds for different operations:
-
-- `SpanKind.AGENT` - Agent operations
-- `SpanKind.TOOL` - Tool calls
-- `SpanKind.MODEL` - Model API calls
-- `SpanKind.HANDOFF` - Agent handoffs
-- `SpanKind.INTERNAL` - General internal operations
-- `SpanKind.CLIENT` - Client requests
-- `SpanKind.SERVER` - Server responses
-
-### Configuration
-
-Control tracing behavior with environment variables:
-
-- `CONTEXA_TRACE_EXPORTER` - Sets the trace exporter (console, file, otlp)
-- `CONTEXA_TRACE_DIR` - Directory to store trace files (when using file exporter)
-
-```bash
-export CONTEXA_TRACE_EXPORTER=file
-export CONTEXA_TRACE_DIR=./.ctx/traces
+# Log a custom event
+log_event(
+    event="custom.processing",
+    level="INFO",
+    data={
+        "step": "data_extraction",
+        "status": "success",
+        "extracted_entities": ["New York", "weather"]
+    }
+)
 ```
 
 ## Metrics
 
-Metrics provide aggregated data about your agent operations, including latency, token usage, and more.
-
-### Built-in Metrics
-
-The SDK includes several built-in metrics:
-
-- `agent_requests_total` - Total number of agent requests
-- `agent_latency_seconds` - Latency of agent requests
-- `model_tokens_total` - Total tokens used by models
-- `tool_calls_total` - Total number of tool calls
-- `tool_latency_seconds` - Latency of tool calls
-- `handoffs_total` - Total number of agent handoffs
-- `active_agents` - Number of currently active agents
-
-### Recording Custom Metrics
+### Collecting Metrics
 
 ```python
-from contexa_sdk.observability import record_metric, Timer
-from contexa_sdk.observability.metrics import counter, gauge, histogram
+from contexa_sdk.observability.metrics import MetricsCollector
 
-# Simple metric recording
-record_metric("counter", "my_counter", 1, "My custom counter", {"label1": "value1"})
+# Create a metrics collector
+metrics = MetricsCollector()
 
-# Use specific metric types
-my_counter = counter("operations_total", "Total operations performed", ["operation_type"])
-my_counter.inc(1, operation_type="query")
+# Record metrics
+metrics.record_counter("agent.runs.total", 1, tags={"agent_id": "agent-1234"})
+metrics.record_gauge("agent.memory.usage_mb", 250, tags={"agent_id": "agent-1234"})
+metrics.record_histogram("agent.response_time_ms", 320, tags={"agent_id": "agent-1234"})
 
-my_gauge = gauge("queue_size", "Number of items in queue")
-my_gauge.set(10)
-
-my_histogram = histogram("response_size_bytes", "Size of responses in bytes")
-my_histogram.observe(1024)
-
-# Timing operations
-with Timer(my_histogram, operation_type="query") as timer:
-    # Perform operation
-    result = perform_operation()
+# Record latency using context manager
+with metrics.measure_latency("tool.execution_time_ms", tags={"tool_id": "web_search"}):
+    # Code to measure
+    result = await web_search(query="example query")
 ```
 
-### Configuration
+### Available Metrics
 
-Control metrics behavior with environment variables:
+The SDK automatically collects key metrics:
 
-- `CONTEXA_METRICS_EXPORTER` - Sets the metrics exporter (console, file, prometheus)
-- `CONTEXA_METRICS_DIR` - Directory to store metrics files (when using file exporter)
-- `CONTEXA_METRICS_FLUSH_INTERVAL` - Interval in seconds to flush metrics (default: 60)
-- `CONTEXA_METRICS_AUTO_START` - Whether to auto-start metrics collection (default: true)
+| Metric Name | Type | Description |
+|-------------|------|-------------|
+| `agent.runs.total` | Counter | Total number of agent runs |
+| `agent.runs.success` | Counter | Successful agent runs |
+| `agent.runs.error` | Counter | Failed agent runs |
+| `agent.response_time_ms` | Histogram | Agent response time in milliseconds |
+| `tool.calls.total` | Counter | Total number of tool calls |
+| `tool.calls.success` | Counter | Successful tool calls |
+| `tool.calls.error` | Counter | Failed tool calls |
+| `tool.execution_time_ms` | Histogram | Tool execution time in milliseconds |
+| `model.tokens.input` | Counter | Number of input tokens sent to the model |
+| `model.tokens.output` | Counter | Number of output tokens received from the model |
+| `model.calls.total` | Counter | Total number of model API calls |
+| `model.latency_ms` | Histogram | Model API latency in milliseconds |
 
-```bash
-export CONTEXA_METRICS_EXPORTER=file
-export CONTEXA_METRICS_DIR=./.ctx/metrics
-export CONTEXA_METRICS_FLUSH_INTERVAL=30
-```
+### Exporting Metrics
 
-## Integration with External Systems
-
-The Contexa SDK's observability features are designed to work with popular external systems:
-
-### OpenTelemetry Integration
-
-The tracing system is compatible with OpenTelemetry, allowing you to export traces to systems like Jaeger, Zipkin, or any other OpenTelemetry-compatible system.
+Export metrics to various backends:
 
 ```python
-# Future feature - setting up OpenTelemetry export
+# Export to Prometheus
+from contexa_sdk.observability.exporters import PrometheusExporter
+
+prometheus = PrometheusExporter(port=9090)
+metrics.add_exporter(prometheus)
+
+# Export to OpenTelemetry
+from contexa_sdk.observability.exporters import OTelMetricsExporter
+
+otel = OTelMetricsExporter(
+    endpoint="https://otel-collector.example.com:4317"
+)
+metrics.add_exporter(otel)
 ```
 
-### Prometheus Integration
+## Tracing
 
-Metrics can be exported to Prometheus for monitoring and alerting.
+### Trace Context
+
+Track requests across components with trace context:
 
 ```python
-# Future feature - setting up Prometheus export
+from contexa_sdk.observability.tracing import Tracer, TraceContext
+
+# Create a tracer
+tracer = Tracer()
+
+# Start a new trace
+with tracer.start_span("agent.run") as span:
+    # Add attributes to the span
+    span.set_attribute("agent_id", "agent-1234")
+    span.set_attribute("input", "What's the weather today?")
+    
+    # Create a nested span for a tool call
+    with tracer.start_span("tool.execute", parent=span) as tool_span:
+        tool_span.set_attribute("tool_id", "web_search")
+        tool_span.set_attribute("tool_name", "Web Search")
+        
+        # Execute the tool
+        result = await web_search(query="weather today")
+        
+        tool_span.set_attribute("status", "success")
 ```
 
-## Visualizing Tracing Data
+### Automatic Tracing
 
-You can visualize your traces using any OpenTelemetry-compatible visualization tool. For a quick local view, the file-based traces can be converted to a browser-viewable format:
+The SDK can automatically trace agent and tool operations:
 
 ```python
-from contexa_sdk.observability.viewers import create_trace_visualization
+from contexa_sdk.observability.tracing import configure_tracing
 
-# Generate an HTML file to view traces
-create_trace_visualization(
-    trace_dir="./.ctx/traces",
-    output_file="./traces.html"
+# Enable automatic tracing
+configure_tracing(
+    service_name="my-agent-service",
+    enable_auto_instrumentation=True
+)
+
+# Create an agent with auto-tracing
+agent = ContexaAgent(
+    name="My Assistant",
+    description="A helpful assistant",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[web_search],
+    enable_tracing=True  # Enable automatic tracing
 )
 ```
 
-## Best Practices
+### Trace Exporters
 
-1. **Use standard span kinds** - Use the provided SpanKind values for consistency
-2. **Add context to logs** - Include relevant context in log messages
-3. **Label metrics appropriately** - Add meaningful labels to metrics
-4. **Use tracing for complex workflows** - Trace complex operations to understand bottlenecks
-5. **Monitor token usage** - Keep an eye on token usage metrics to control costs 
+Export traces to various backends:
+
+```python
+from contexa_sdk.observability.exporters import JaegerExporter
+
+# Export traces to Jaeger
+jaeger = JaegerExporter(
+    endpoint="http://jaeger-collector:14268/api/traces"
+)
+tracer.add_exporter(jaeger)
+
+# Export traces to OpenTelemetry
+from contexa_sdk.observability.exporters import OTelTracesExporter
+
+otel = OTelTracesExporter(
+    endpoint="https://otel-collector.example.com:4317"
+)
+tracer.add_exporter(otel)
+```
+
+## OpenTelemetry Integration
+
+Integrate with the OpenTelemetry ecosystem:
+
+```python
+from contexa_sdk.observability import configure_opentelemetry
+
+# Configure OpenTelemetry integration
+configure_opentelemetry(
+    service_name="contexa-agent-service",
+    exporter="otlp",  # Options: otlp, jaeger, zipkin
+    endpoint="https://otel-collector.example.com:4317",
+    enable_metrics=True,
+    enable_traces=True,
+    enable_logs=True
+)
+```
+
+## Dashboard & Visualization
+
+The SDK includes pre-built dashboards for popular monitoring systems:
+
+- **Grafana**: Import dashboards from `contexa_sdk/observability/dashboards/grafana`
+- **Datadog**: Use templates from `contexa_sdk/observability/dashboards/datadog`
+- **Elasticsearch/Kibana**: Import from `contexa_sdk/observability/dashboards/kibana`
+
+## Context Preservation
+
+Track conversation context across multiple runs:
+
+```python
+from contexa_sdk.observability.context import ConversationContext
+
+# Create a context container
+context = ConversationContext()
+
+# Add context to a run
+result1 = await agent.run(
+    "What's the weather in New York?",
+    conversation_context=context
+)
+
+# Later, continue with context
+result2 = await agent.run(
+    "How about tomorrow?",
+    conversation_context=context
+)
+```
+
+## Agent Introspection
+
+Inspect agent internals for debugging:
+
+```python
+from contexa_sdk.observability.introspection import AgentIntrospector
+
+# Create an introspector
+introspector = AgentIntrospector(agent)
+
+# Get agent state
+state = introspector.get_state()
+
+# Get execution graph
+graph = introspector.get_execution_graph()
+
+# Print detailed stats
+introspector.print_stats()
+```
+
+## Examples
+
+For complete examples of observability integration, see:
+- [Basic Observability Example](examples/observability_example.py)
+- [Advanced Tracing Example](examples/tracing_example.py)
+- [Dashboard Setup Example](examples/monitoring_dashboard_example.py) 

@@ -1,180 +1,229 @@
-# Contexa SDK Agent Runtime
+# Agent Runtime
 
-The Agent Runtime module provides infrastructure for managing AI agent lifecycles and execution environments. It handles agent coordination, resource allocation, state persistence, and health monitoring.
+The Contexa Agent Runtime provides a robust infrastructure for managing the entire lifecycle of AI agents. It handles agent execution, state management, resource allocation, health monitoring, and recovery - enabling reliable and scalable agent deployments.
 
-## Core Features
+## Key Features
 
-### Agent Lifecycle Management
-
-- **Starting and stopping agents**: Provides methods to initialize and cleanly shut down agents
-- **Pause and resume**: Allows suspending agent execution while retaining state
-- **Registering and unregistering**: Manages agent registration with runtime environments
-
-### State Persistence
-
-- **Checkpointing and recovery**: Persists agent state to recover from failures
-- **Conversation history**: Preserves memory and context between agent restarts
-- **Custom state handling**: Supports agent-specific state formats with flexible serialization
-
-### Resource Management
-
-- **Resource tracking**: Monitors memory, CPU, and API token usage
-- **Resource limits**: Enforces constraints on resource consumption
-- **Scaling**: Adjusts resources based on workload (in cluster environments)
-
-### Health Monitoring
-
-- **Automated health checks**: Continuously monitors agent health status
-- **Auto-recovery**: Attempts to restore agents experiencing issues
-- **Diagnostics**: Provides insights into agent performance and errors
+- **Lifecycle Management**: Control agent startup, execution, and shutdown
+- **State Persistence**: Save and restore agent state for resilience  
+- **Resource Tracking**: Monitor and limit resource usage
+- **Health Monitoring**: Detect and recover from failures
+- **Scaling**: Run agents across distributed environments
+- **Event Bus**: Enable inter-agent communication
 
 ## Architecture
 
-The Agent Runtime is designed with modular components:
+The agent runtime consists of several key components:
+
+1. **Runtime Manager**: Coordinates agent execution and lifecycle events
+2. **State Manager**: Handles agent state persistence and recovery
+3. **Resource Manager**: Monitors and controls resource utilization
+4. **Health Monitor**: Tracks agent health and triggers recovery actions
+5. **Event Bus**: Facilitates communication between agents
+6. **Cluster Manager**: Coordinates agent execution across multiple nodes
 
 ```
-runtime/
-├── __init__.py             # Module exports
-├── agent_runtime.py        # Core interfaces and abstract base classes
-├── state_management.py     # State persistence interfaces and implementations
-├── resource_tracking.py    # Resource usage monitoring
-├── health_monitoring.py    # Health checks and recovery mechanisms
-├── local_runtime.py        # Single-process runtime implementation
-└── cluster_runtime.py      # Distributed runtime for multi-node deployments
+┌───────────────────────────────────────┐
+│           Runtime Manager             │
+├───────────┬───────────┬───────────────┤
+│  State    │ Resource  │   Health      │
+│  Manager  │ Manager   │   Monitor     │
+├───────────┴───────────┴───────────────┤
+│              Event Bus                │
+├───────────────────────────────────────┤
+│           Cluster Manager             │
+└───────────────────────────────────────┘
 ```
 
-## Usage Examples
+## Basic Usage
 
-### Basic Usage
+### Single Agent Runtime
 
 ```python
-import asyncio
+from contexa_sdk.runtime.manager import RuntimeManager
 from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.runtime import AgentRuntimeConfig, FileStateProvider
-from contexa_sdk.runtime.local_runtime import LocalAgentRuntime
 
-async def main():
-    # Configure the runtime
-    config = AgentRuntimeConfig(
-        state_provider=FileStateProvider("./agent_states"),
-        health_check_interval_seconds=30
-    )
-    
-    # Create and start the runtime
-    runtime = LocalAgentRuntime(config=config)
-    await runtime.start()
-    
-    # Register an agent
-    agent = ContexaAgent(
-        name="Assistant",
-        description="A helpful assistant",
-        model=my_model,
-        tools=my_tools
-    )
-    agent_id = await runtime.register_agent(agent)
-    
-    # Run the agent
-    response = await runtime.run_agent(agent_id, "Hello, how can you help me?")
-    print(response)
-    
-    # Check agent health
-    health = await runtime.check_health(agent_id)
-    print(f"Agent health: {health['status']}")
-    
-    # Save agent state
-    await runtime.save_agent_state(agent_id)
-    
-    # Stop the runtime
-    await runtime.stop()
+# Create an agent
+agent = ContexaAgent(
+    name="Assistant",
+    description="A helpful assistant",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[web_search]
+)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Initialize runtime manager
+runtime = RuntimeManager()
+
+# Register agent with the runtime
+agent_id = await runtime.register_agent(agent)
+
+# Start the agent
+await runtime.start_agent(agent_id)
+
+# Run the agent
+result = await runtime.run_agent(
+    agent_id, 
+    input="What are the latest AI advancements?"
+)
+
+# Stop the agent
+await runtime.stop_agent(agent_id)
 ```
 
-### Using the Cluster Runtime
+### Persistent State
+
+The runtime can persist agent state, allowing agents to be stopped and resumed:
 
 ```python
-from contexa_sdk.runtime.cluster_runtime import ClusterAgentRuntime
+# Save state
+state_id = await runtime.save_state(agent_id)
 
-# Create a coordinator node
-coordinator = ClusterAgentRuntime(
-    is_coordinator=True,
-    node_endpoint="http://localhost:8000"
+# Stop agent
+await runtime.stop_agent(agent_id)
+
+# Later, restore the agent with its state
+new_agent_id = await runtime.restore_agent(state_id)
+
+# Continue the conversation
+result = await runtime.run_agent(
+    new_agent_id, 
+    input="Tell me more about that last topic"
 )
-await coordinator.start()
-
-# Create a worker node
-worker = ClusterAgentRuntime(
-    coordinator_endpoint="http://localhost:8000",
-    node_endpoint="http://localhost:8001"
-)
-await worker.start()
-
-# Register an agent on the coordinator
-agent_id = await coordinator.register_agent(my_agent)
-
-# Run the agent (automatically routed to the appropriate node)
-response = await coordinator.run_agent(agent_id, "Process this request")
 ```
 
-## State Providers
+### Resource Management
 
-The runtime supports different state persistence mechanisms:
-
-- **InMemoryStateProvider**: Keeps state in memory (for testing or ephemeral agents)
-- **FileStateProvider**: Persists state to the filesystem as JSON files
-- Custom providers: Implement the `StateProvider` interface for your own storage backends
-
-## Health Checks
-
-Built-in health checks include:
-
-- **ResourceHealthCheck**: Monitors resource usage against defined limits
-- **ResponseTimeHealthCheck**: Tracks and analyzes agent response times
-- Custom checks: Extend the `HealthCheck` base class for specialized monitoring
-
-## Resource Tracking
-
-The runtime tracks various resource metrics:
-
-- Memory usage
-- CPU utilization  
-- Requests per minute
-- Tokens per minute
-- Concurrent requests
-
-## Configuration
-
-The `AgentRuntimeConfig` class allows customizing runtime behavior:
+Control and monitor resource usage:
 
 ```python
-config = AgentRuntimeConfig(
-    max_agents=10,  # Maximum number of agents to support
-    default_resource_limits=ResourceLimits(
-        max_memory_mb=500,
-        max_cpu_percent=80,
-        max_requests_per_minute=100,
-        max_tokens_per_minute=10000
-    ),
-    state_provider=my_state_provider,
-    health_check_interval_seconds=60,
-    additional_options={
-        "state_save_interval_seconds": 300,
-        "heartbeat_interval_seconds": 10,
-    }
+# Configure resource limits
+from contexa_sdk.runtime.resources import ResourceLimits
+
+limits = ResourceLimits(
+    max_memory_mb=1024,
+    max_tokens_per_minute=10000,
+    max_concurrent_requests=5
+)
+
+# Register agent with resource limits
+agent_id = await runtime.register_agent(agent, resource_limits=limits)
+
+# Get current resource usage
+usage = await runtime.get_resource_usage(agent_id)
+print(f"Memory usage: {usage.memory_mb}MB")
+print(f"Token usage: {usage.tokens_used_last_minute}/min")
+```
+
+## Event Bus
+
+The event bus enables communication between agents:
+
+```python
+from contexa_sdk.runtime.events import EventBus, Event
+
+# Create an event bus
+event_bus = EventBus()
+
+# Register event handlers
+async def handle_search_event(event):
+    query = event.data["query"]
+    # Perform search
+    result = await search_function(query)
+    # Publish results
+    await event_bus.publish(Event(
+        type="search_result",
+        data={"query": query, "result": result}
+    ))
+
+# Subscribe to events
+await event_bus.subscribe("search_request", handle_search_event)
+
+# Publish an event
+await event_bus.publish(Event(
+    type="search_request",
+    data={"query": "latest AI research"}
+))
+```
+
+## Distributed Runtime
+
+For scaling across multiple nodes:
+
+```python
+from contexa_sdk.runtime.cluster import ClusterManager
+
+# Initialize cluster manager
+cluster = ClusterManager(
+    discovery_url="redis://localhost:6379",
+    node_id="node-1"
+)
+
+# Register with the cluster
+await cluster.register()
+
+# Start agent on the most available node
+agent_id = await cluster.start_agent(agent)
+
+# Run agent (automatically routes to the right node)
+result = await cluster.run_agent(
+    agent_id, 
+    input="What's the weather today?"
 )
 ```
 
-## Extending the Runtime
+## Health Monitoring
 
-You can extend the runtime with custom functionality:
+Monitor agent health and implement recovery:
 
-1. Implement custom state providers by extending `StateProvider`
-2. Create custom health checks by extending `HealthCheck`
-3. Build domain-specific runtimes by extending `AgentRuntime`
+```python
+from contexa_sdk.runtime.health import HealthMonitor
 
-## Implementation Notes
+# Create health monitor
+health = HealthMonitor()
 
-- The runtime is designed to be async-first, using Python's asyncio
-- Thread safety is ensured through appropriate locking mechanisms
-- Error handling follows a centralized pattern for consistent recovery behavior 
+# Register health checks
+async def check_model_availability():
+    try:
+        response = await model.generate("test")
+        return True
+    except Exception:
+        return False
+
+health.register_check("model_availability", check_model_availability)
+
+# Configure auto-recovery
+async def recover_model():
+    # Implement recovery logic
+    pass
+
+health.register_recovery("model_availability", recover_model)
+
+# Start health monitoring for an agent
+await health.monitor_agent(agent_id, interval_seconds=60)
+```
+
+## Deployment
+
+Deploy agents as standalone services:
+
+```python
+from contexa_sdk.deployment.service import AgentService
+
+# Create a service from an agent
+service = AgentService(agent)
+
+# Start the service
+await service.start(port=8000)
+```
+
+This exposes HTTP endpoints:
+- `POST /run` - Run the agent
+- `GET /health` - Check agent health
+- `GET /status` - Get agent status
+
+## Examples
+
+For complete examples of the runtime system, see:
+- [Basic Runtime Example](examples/runtime_example.py)
+- [Cluster Runtime Example](examples/cluster_runtime_example.py)
+- [MCP Agent Example](examples/mcp_agent_example.py) 

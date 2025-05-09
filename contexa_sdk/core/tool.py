@@ -1,4 +1,40 @@
-"""Tool module for Contexa SDK."""
+"""Tool module for Contexa SDK.
+
+This module provides the core tools functionality for the Contexa SDK, enabling you to define,
+register, and use tools with your agents. Tools can be both local (running in the same process)
+or remote (accessed via MCP-compatible endpoints).
+
+Examples:
+    Define a tool using the decorator pattern:
+    
+    ```python
+    from contexa_sdk.core.tool import ContexaTool
+    from pydantic import BaseModel
+    
+    class SearchInput(BaseModel):
+        query: str
+    
+    @ContexaTool.register(
+        name="web_search",
+        description="Search the web and return text snippet"
+    )
+    async def web_search(inp: SearchInput) -> str:
+        return f"Top hit for {inp.query}"
+    ```
+    
+    Define a remote tool:
+    
+    ```python
+    from contexa_sdk.core.tool import RemoteTool
+    
+    weather_tool = RemoteTool(
+        endpoint_url="https://api.example.com/mcp/weather",
+        name="get_weather",
+        description="Get current weather for a location",
+        schema=WeatherInput
+    )
+    ```
+"""
 
 import inspect
 import uuid
@@ -12,7 +48,23 @@ from contexa_sdk.core.config import ContexaConfig
 
 
 class ContexaTool:
-    """Base class for Contexa tools."""
+    """Base class for Contexa tools.
+    
+    ContexaTool represents a callable function or method that can be used by agents
+    to perform specific tasks. Tools have a name, description, version, and schema
+    that describes their input parameters.
+    
+    Tools can be created directly by instantiating this class, or more commonly,
+    using the @ContexaTool.register decorator.
+    
+    Attributes:
+        name (str): Human-readable name of the tool
+        description (str): Detailed description of what the tool does and how to use it
+        version (str): Version string for the tool
+        schema (Type[BaseModel]): Pydantic model defining the input schema for the tool
+        tool_id (str): Unique identifier for the tool instance
+        config (ContexaConfig): Configuration for the tool
+    """
 
     name: str
     description: str
@@ -78,7 +130,22 @@ class ContexaTool:
             self.schema = schema
 
     async def __call__(self, **kwargs) -> Any:
-        """Call the tool function."""
+        """Call the tool function.
+        
+        This method validates the inputs against the tool's schema and then calls
+        the underlying function. If the function is synchronous, it will be run
+        in a thread pool to maintain async compatibility.
+        
+        Args:
+            **kwargs: The input parameters for the tool
+            
+        Returns:
+            The result from the tool function
+            
+        Raises:
+            ValidationError: If the inputs don't match the schema
+            Exception: Any exception raised by the tool function
+        """
         # Validate inputs against schema
         inputs = self.schema(**kwargs)
         
@@ -90,7 +157,11 @@ class ContexaTool:
             return await asyncio.to_thread(self._func, inputs)
             
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the tool to a dictionary."""
+        """Convert the tool to a dictionary.
+        
+        Returns:
+            A dictionary representation of the tool with its metadata
+        """
         return {
             "name": self.name,
             "description": self.description,
@@ -108,14 +179,26 @@ class ContexaTool:
     ):
         """Register a function as a ContexaTool.
         
-        This decorator can be used to register a function as a ContexaTool:
+        This decorator can be used to register a function as a ContexaTool.
+        It creates a tool instance and registers it with the global tool registry.
         
-        @ContexaTool.register(
-            name="web_search",
-            description="Search the web and return text snippet"
-        )
-        async def web_search(inp: SearchInput) -> str:
-            return f"Top hit for {inp.query}"
+        Args:
+            name: Name of the tool (defaults to function name)
+            description: Description of the tool (defaults to function docstring)
+            version: Version of the tool
+            
+        Returns:
+            A decorator function that wraps the original function
+            
+        Example:
+            ```python
+            @ContexaTool.register(
+                name="web_search",
+                description="Search the web and return text snippet"
+            )
+            async def web_search(inp: SearchInput) -> str:
+                return f"Top hit for {inp.query}"
+            ```
         """
         def decorator(func: Callable) -> ContexaTool:
             tool = cls(
@@ -139,7 +222,22 @@ class ContexaTool:
 
 
 class RemoteTool(ContexaTool):
-    """A tool that calls a remote MCP-compatible API."""
+    """A tool that calls a remote MCP-compatible API.
+    
+    RemoteTool extends ContexaTool to represent a tool that is implemented
+    as a remote MCP-compatible API endpoint. This allows agents to use tools
+    that are hosted in external services while maintaining the same interface
+    as local tools.
+    
+    Attributes:
+        endpoint_url (str): URL of the MCP-compatible API endpoint
+        name (str): Human-readable name of the tool
+        description (str): Detailed description of what the tool does
+        version (str): Version string for the tool
+        schema (Type[BaseModel]): Pydantic model defining the input schema
+        tool_id (str): Unique identifier for the tool instance
+        config (ContexaConfig): Configuration for the tool
+    """
     
     endpoint_url: str
     
@@ -164,6 +262,23 @@ class RemoteTool(ContexaTool):
             schema: Input schema for the tool
             config: Configuration for the tool
             tool_id: Unique ID for the tool (auto-generated if not provided)
+            
+        Example:
+            ```python
+            from contexa_sdk.core.tool import RemoteTool
+            from pydantic import BaseModel
+            
+            class WeatherInput(BaseModel):
+                location: str
+                unit: str = "celsius"
+                
+            weather_tool = RemoteTool(
+                endpoint_url="https://api.example.com/mcp/weather",
+                name="get_weather",
+                description="Get current weather for a location",
+                schema=WeatherInput
+            )
+            ```
         """
         async def remote_caller(**kwargs):
             """Call the remote MCP API."""

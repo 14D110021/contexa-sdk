@@ -1,127 +1,164 @@
-# Multi-Framework Integration in Contexa SDK
+# Multi-Framework Integration
 
-The Contexa SDK provides powerful capabilities for integrating AI agents across multiple frameworks, enabling you to build complex AI workflows that leverage the strengths of different ecosystems.
+Contexa SDK enables seamless integration between different agent frameworks, allowing you to:
 
-## Key Features
-
-- **Framework Adapters**: Convert between Contexa and popular frameworks including LangChain, CrewAI, OpenAI, and Google Vertex AI
-- **Bidirectional Conversion**: Both export Contexa agents to other frameworks and import external agents into Contexa
-- **Context Preservation**: Maintain conversation history and context when switching between frameworks
-- **Centralized Registry**: Use a unified interface to manage tools, models, and agents across frameworks
-- **MCP Protocol Support**: Package agents as MCP servers for standard communication
+1. **Write once, run anywhere**: Define tools, models, and agents once and use them in any supported framework
+2. **Framework interoperability**: Share capabilities between frameworks without duplicating code
+3. **Agent handoffs**: Transfer control between agents built on different frameworks while maintaining context
 
 ## Supported Frameworks
 
-| Framework | Import to Contexa | Export from Contexa |
-|-----------|-------------------|---------------------|
-| LangChain | ✅                | ✅                  |
-| CrewAI    | ✅                | ✅                  |
-| OpenAI    | ✅                | ✅                  |
-| Google AI | ✅                | ✅                  |
+The SDK currently supports the following frameworks:
 
-## Using the Framework Adapters
+| Framework | Min Version | Adapter | Installation |
+|-----------|-------------|---------|------------|
+| LangChain | 0.1.0 | `langchain.py` | `pip install contexa-sdk[langchain]` |
+| CrewAI | 0.110.0 | `crewai.py` | `pip install contexa-sdk[crewai]` |
+| OpenAI Agents SDK | 0.4.0 | `openai.py` | `pip install contexa-sdk[openai]` |
+| Google ADK | 0.3.0 | `google_adk.py` | `pip install contexa-sdk[google-adk]` |
 
-### Converting a Contexa Agent to a Framework
+## Architecture
+
+The multi-framework integration is built on the adapter pattern:
+
+```
+Contexa Core Objects → Adapters → Framework Native Objects
+```
+
+Each adapter implements the `BaseAdapter` interface, which provides methods to convert Contexa core objects to framework-specific objects:
 
 ```python
-from contexa_sdk.adapters.langchain import convert_agent_to_langchain
+class BaseAdapter(ABC):
+    def tool(self, t: ContexaTool) -> Any: ...
+    def model(self, m: ContexaModel) -> Any: ...
+    def agent(self, a: ContexaAgent) -> Any: ...
+    def prompt(self, p: ContexaPrompt) -> Any: ...
+```
 
-# Create a Contexa agent
-contexa_agent = ContexaAgent(
-    name="Research Agent",
-    description="Searches the web for information",
-    tools=[web_search_tool],
-    model=gpt4_model
+## Using Adapters
+
+### Converting Tools
+
+```python
+from contexa_sdk.core.tool import ContexaTool
+from pydantic import BaseModel
+
+# Define a Contexa tool
+class SearchInput(BaseModel):
+    query: str
+
+@ContexaTool.register(
+    name="web_search",
+    description="Search the web and return text snippet"
+)
+async def web_search(inp: SearchInput) -> str:
+    return f"Top hit for {inp.query}"
+
+# Convert to framework-specific tools
+from contexa_sdk.adapters import langchain, crewai, openai, google_adk
+
+# LangChain tool
+lc_tool = langchain.tool(web_search)
+
+# CrewAI tool
+crew_tool = crewai.tool(web_search)
+
+# OpenAI tool
+oa_tool = openai.tool(web_search)
+
+# Google ADK tool
+adk_tool = google_adk.tool(web_search)
+```
+
+### Converting Models
+
+```python
+from contexa_sdk.core.model import ContexaModel
+
+# Define a Contexa model
+model = ContexaModel(provider="openai", model_id="gpt-4o")
+
+# Convert to framework-specific models
+lc_model = langchain.model(model)
+crew_model = crewai.model(model)
+oa_model = openai.model(model)
+adk_model = google_adk.model(model)
+```
+
+### Converting Agents
+
+```python
+from contexa_sdk.core.agent import ContexaAgent
+
+# Define a Contexa agent
+agent = ContexaAgent(
+    name="My Assistant",
+    description="A helpful assistant",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[web_search]
 )
 
-# Convert to LangChain
-langchain_agent = await convert_agent_to_langchain(contexa_agent)
+# Convert to framework-specific agents
+lc_agent = langchain.agent(agent)
+crew_agent = crewai.agent(agent)
+oa_agent = openai.agent(agent)
+adk_agent = google_adk.agent(agent)
+```
 
-# Use with LangChain's ecosystem
-from langchain.agents import AgentExecutor
-executor = AgentExecutor.from_agent_and_tools(
-    agent=langchain_agent,
-    tools=langchain_tools
+## Agent Handoffs
+
+Contexa SDK enables seamless handoffs between agents built on different frameworks. During a handoff, the conversation context is preserved, allowing agents to collaborate effectively.
+
+```python
+# First, define agents using different frameworks
+from contexa_sdk.adapters import langchain, crewai
+from contexa_sdk.core.agent import ContexaAgent
+
+# LangChain-based research agent
+research_agent = langchain.agent(ContexaAgent(
+    name="Researcher",
+    description="Researches topics and finds information",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[web_search]
+))
+
+# CrewAI-based writing agent
+writing_agent = crewai.agent(ContexaAgent(
+    name="Writer",
+    description="Writes content based on research",
+    model=ContexaModel(provider="anthropic", model_id="claude-3-opus"),
+    tools=[]
+))
+
+# Perform a handoff from the research agent to the writing agent
+from contexa_sdk.runtime.handoff import handoff
+
+# First, run the research agent
+research_result = await research_agent.run("Research AI advancements in 2023")
+
+# Then, hand off to the writing agent with the research result
+final_result = await handoff(
+    from_agent=research_agent,
+    to_agent=writing_agent,
+    message=f"Write a summary based on this research: {research_result}"
 )
 ```
 
-### Importing a Framework Agent to Contexa
+## Implementation Details
 
-```python
-from contexa_sdk.adapters.openai import adapt_openai_assistant
+Each adapter maps Contexa objects to framework-specific objects:
 
-# Create a RemoteAgent that wraps an OpenAI Assistant
-openai_assistant_id = "asst_abc123"
-contexa_agent = await adapt_openai_assistant(openai_assistant_id)
+| Adapter | Tool Mapping | Agent Mapping | Notes |
+|---------|--------------|---------------|-------|
+| LangChain | `langchain_core.tools.BaseTool` | `AgentExecutor` | Uses `@tool` decorator or `BaseTool` subclass |
+| CrewAI | `crewai.Tool` | `Crew` | CrewAI treats any callable as a tool |
+| OpenAI | `openai_agents.Tool` | `openai_agents.Agent` | Generates JSON schema for tools |
+| Google ADK | `adk.Tool` | `adk.Agent` | Similar to OpenAI, generates function specs |
 
-# Use like any other Contexa agent
-result = await contexa_agent.run("What are the latest trends in AI?")
-```
+For more details on the implementation of each adapter, see the source code in the `contexa_sdk/adapters/` directory.
 
-## Multi-Framework Workflow Example
+## Examples
 
-The SDK enables you to build workflows that span multiple frameworks, as demonstrated in the `multi_framework_integration.py` example:
-
-```python
-# Initial task for the research agent (LangChain)
-research_result = await langchain_agent.run(initial_query)
-
-# Hand off to analysis agent (CrewAI)
-analysis_result = await crewai_agent.run(f"Analyze this data: {research_result}")
-
-# Hand off to generation agent (OpenAI)
-generation_result = await openai_agent.run(f"Generate content based on: {analysis_result}")
-
-# Hand off to summary agent (Google AI)
-summary_result = await google_agent.run(f"Summarize: {generation_result}")
-```
-
-## Resource Registry
-
-The Contexa SDK provides a centralized registry for managing components across frameworks:
-
-```python
-from contexa_sdk.client import tools, models, agents
-
-# Register tools, models, and agents
-tools.register("web_search", my_search_tool)
-models.register("gpt-4", my_gpt4_model)
-agents.register("research_agent", my_research_agent)
-
-# Retrieve them anywhere in your application
-search_tool = tools.get("web_search")
-gpt4_model = models.get("gpt-4")
-research_agent = agents.get("research_agent")
-```
-
-## MCP Protocol Support
-
-The SDK can package agents as Multi-Channel Protocol (MCP) servers:
-
-```python
-from contexa_sdk.deployment import build_mcp_agent_server
-
-# Build an MCP-compatible agent server
-artifact_path = build_mcp_agent_server(
-    agent=my_agent,
-    output_dir="./deployment",
-    mcp_version="1.0"
-)
-```
-
-This enables standardized communication between agents across different platforms and providers.
-
-## Getting Started
-
-To start using the multi-framework integration capabilities:
-
-1. Install the Contexa SDK: `pip install contexa-sdk`
-2. Install the frameworks you want to integrate with: `pip install langchain crewai openai google-cloud-aiplatform`
-3. Import the appropriate adapters: `from contexa_sdk.adapters.langchain import ...`
-4. See the examples directory for complete demonstrations
-
-## Additional Documentation
-
-- [Agent Handoffs](./README_AGENT_HANDOFFS.md)
-- [Observability](./README_OBSERVABILITY.md)
-- [MCP Protocol](./README_MCP.md) 
+For complete examples of multi-framework integration, see:
+- [Multi-Framework Integration Example](examples/multi_framework_integration.py)
+- [Agent Handoff Example](examples/agent_handoff.py) 

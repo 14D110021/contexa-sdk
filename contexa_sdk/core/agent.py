@@ -1,4 +1,45 @@
-"""Agent module for Contexa SDK."""
+"""Agent module for Contexa SDK.
+
+This module provides framework-agnostic agent implementations for the Contexa SDK.
+It defines the core agent classes, memory management, and agent-to-agent handoff
+capabilities that form the foundation of the agent runtime system.
+
+The module supports both local agents (ContexaAgent) and remote agents (RemoteAgent),
+enabling seamless interaction regardless of where agents are deployed.
+
+Examples:
+    Create and run a local agent:
+    
+    ```python
+    from contexa_sdk.core.agent import ContexaAgent
+    from contexa_sdk.core.model import ContexaModel
+    from contexa_sdk.core.tool import ContexaTool
+    
+    # Create an agent with a model and tools
+    agent = ContexaAgent(
+        name="My Assistant",
+        description="A helpful assistant",
+        model=ContexaModel(provider="openai", model_id="gpt-4o"),
+        tools=[web_search_tool],
+        system_prompt="You are a helpful assistant specialized in research."
+    )
+    
+    # Run the agent
+    response = await agent.run("What's the latest news on AI?")
+    print(response)
+    ```
+    
+    Perform an agent handoff:
+    
+    ```python
+    # Hand off from one agent to another
+    result = await research_agent.handoff_to(
+        writing_agent,
+        query="Write a summary of the research findings",
+        include_history=True
+    )
+    ```
+"""
 
 import uuid
 import json
@@ -25,7 +66,20 @@ AgentT = TypeVar('AgentT')
 
 
 class HandoffData(BaseModel):
-    """Data structure for agent handoffs."""
+    """Data structure for agent handoffs.
+    
+    This model represents the data exchanged during an agent-to-agent handoff.
+    It contains the query, context, and metadata needed for the target agent
+    to continue processing where the source agent left off.
+    
+    Attributes:
+        query (str): The query to send to the target agent
+        result (Optional[str]): The result from the target agent (if available)
+        context (Dict[str, Any]): Additional context data for the target agent
+        metadata (Dict[str, Any]): Additional metadata about the handoff
+        source_agent_id (Optional[str]): ID of the source agent
+        source_agent_name (Optional[str]): Name of the source agent
+    """
     
     query: str
     result: Optional[str] = None
@@ -36,30 +90,60 @@ class HandoffData(BaseModel):
     
 
 class AgentMemory(BaseModel):
-    """Memory for an agent."""
+    """Memory for an agent.
+    
+    Stores the conversation history, metadata, and handoff history for an agent.
+    The memory provides methods to add and retrieve messages, manage handoffs,
+    and serialize/deserialize the memory state.
+    
+    Attributes:
+        messages (List[ModelMessage]): The conversation history
+        metadata (Dict[str, Any]): Additional metadata for the agent
+        handoff_history (List[HandoffData]): History of handoffs involving this agent
+    """
     
     messages: List[ModelMessage] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
     handoff_history: List[HandoffData] = Field(default_factory=list)
     
     def add_message(self, role: str, content: str) -> None:
-        """Add a message to the memory."""
+        """Add a message to the memory.
+        
+        Args:
+            role (str): The role of the message sender ("system", "user", "assistant")
+            content (str): The content of the message
+        """
         self.messages.append(ModelMessage(role=role, content=content))
         
     def get_messages(self) -> List[ModelMessage]:
-        """Get all messages in the memory."""
+        """Get all messages in the memory.
+        
+        Returns:
+            List[ModelMessage]: The list of all messages in memory
+        """
         return self.messages
         
     def clear(self) -> None:
-        """Clear the memory."""
+        """Clear the memory.
+        
+        Removes all messages from memory, but preserves metadata and handoff history.
+        """
         self.messages = []
         
     def add_handoff(self, handoff_data: HandoffData) -> None:
-        """Add a handoff to the memory."""
+        """Add a handoff to the memory.
+        
+        Args:
+            handoff_data (HandoffData): The handoff data to add to memory
+        """
         self.handoff_history.append(handoff_data)
         
     def to_dict(self) -> Dict[str, Any]:
-        """Convert memory to a dictionary."""
+        """Convert memory to a dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary representation of the memory
+        """
         return {
             "messages": [m.model_dump() for m in self.messages],
             "metadata": self.metadata,
@@ -68,7 +152,14 @@ class AgentMemory(BaseModel):
         
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AgentMemory":
-        """Create an AgentMemory from a dictionary."""
+        """Create an AgentMemory from a dictionary.
+        
+        Args:
+            data (Dict[str, Any]): Dictionary representation of the memory
+            
+        Returns:
+            AgentMemory: Reconstructed memory object
+        """
         return cls(
             messages=[ModelMessage(**m) for m in data.get("messages", [])],
             metadata=data.get("metadata", {}),
@@ -77,7 +168,33 @@ class AgentMemory(BaseModel):
 
 
 class ContexaAgent:
-    """Framework-agnostic wrapper for agents."""
+    """Framework-agnostic wrapper for agents.
+    
+    ContexaAgent provides a unified interface for creating and running AI agents
+    with different language models and tools. It handles conversation management,
+    tool execution, and agent handoffs, with built-in observability through
+    logging, tracing, and metrics.
+    
+    The agent implements a basic reasoning loop that:
+    1. Processes user input
+    2. Generates a response using the language model
+    3. Detects and executes tool calls when needed
+    4. Generates a final response incorporating tool results
+    
+    This base implementation can be extended or adapted to different agent
+    frameworks through the adapter pattern.
+    
+    Attributes:
+        tools (List[ContexaTool]): List of tools available to the agent
+        model (ContexaModel): Language model used by the agent
+        system_prompt (str): System prompt providing instructions to the model
+        name (str): Name of the agent
+        description (str): Description of the agent's capabilities
+        version (str): Version string for the agent
+        config (ContexaConfig): Configuration for the agent
+        agent_id (str): Unique identifier for the agent
+        memory (AgentMemory): Memory storing conversation and handoff history
+    """
     
     def __init__(
         self,
@@ -132,14 +249,22 @@ class ContexaAgent:
     async def run(self, query: str) -> str:
         """Run the agent on a query.
         
-        This is a simple implementation that should be overridden
-        by framework-specific adapters.
+        This method implements the core agent execution loop:
+        1. Add the user query to memory
+        2. Generate a response using the model
+        3. Parse and execute any tool calls
+        4. Generate a final response incorporating tool results
+        
+        This implementation can be overridden by framework-specific adapters.
         
         Args:
-            query: The query to run the agent on
+            query (str): The query to run the agent on
             
         Returns:
-            The agent's response
+            str: The agent's response
+            
+        Raises:
+            Exception: Any errors encountered during agent execution
         """
         # Start metrics timer
         with Timer(agent_latency, agent_id=self.agent_id, agent_name=self.name):
@@ -311,19 +436,26 @@ class ContexaAgent:
     ) -> str:
         """Hand off processing to another agent with context.
         
-        This method allows one agent to pass control to another agent,
-        preserving context and memory when appropriate.
+        This method enables agent-to-agent collaboration by transferring control
+        from this agent to another agent, optionally including conversation history
+        and context. It preserves the continuity of the conversation and provides
+        a way for agents to delegate tasks to more specialized agents.
         
         Args:
-            target_agent: The agent to hand off to
-            query: Optional new query to send to the target agent
+            target_agent (AgentT): The agent to hand off to
+            query (Optional[str]): Optional new query to send to the target agent
                   (default: last query this agent received)
-            context: Additional context data to pass to the target agent
-            metadata: Additional metadata for the handoff
-            include_history: Whether to include message history in the handoff
+            context (Optional[Dict[str, Any]]): Additional context data to pass to the target agent
+            metadata (Optional[Dict[str, Any]]): Additional metadata for the handoff
+            include_history (bool): Whether to include message history in the handoff
             
         Returns:
-            The target agent's response
+            str: The target agent's response
+            
+        Raises:
+            ValueError: If no query is provided and no previous user query found
+            NotImplementedError: If handoff to a framework-specific agent is attempted
+            Exception: Any errors encountered during the handoff
         """
         # Start a span for the handoff
         with Span(name=f"handoff.{self.name}_to_{getattr(target_agent, 'name', 'unknown')}", kind=SpanKind.HANDOFF) as span:
@@ -448,16 +580,17 @@ class ContexaAgent:
     ) -> HandoffData:
         """Prepare handoff data for another agent.
         
-        This is useful when you need to prepare data for a cross-framework handoff
-        but want to use the framework's native handoff mechanism.
+        This method creates a HandoffData object that can be used for a handoff
+        without actually performing the handoff. This is useful for cross-framework
+        handoffs where the framework adapter needs to handle the handoff process.
         
         Args:
-            query: The query to send to the target agent
-            context: Additional context data for the target agent
-            metadata: Additional metadata for the handoff
+            query (str): The query to send to the target agent
+            context (Optional[Dict[str, Any]]): Additional context data for the target agent
+            metadata (Optional[Dict[str, Any]]): Additional metadata for the handoff
             
         Returns:
-            HandoffData object ready for a handoff
+            HandoffData: Object ready for a handoff
         """
         return HandoffData(
             query=query,
@@ -474,7 +607,7 @@ class ContexaAgent:
         from another agent by adding the context to this agent's memory.
         
         Args:
-            handoff_data: The handoff data from the source agent
+            handoff_data (HandoffData): The handoff data from the source agent
         """
         # Add the handoff data to this agent's memory
         self.memory.add_handoff(handoff_data)
