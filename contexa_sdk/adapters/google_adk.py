@@ -1,4 +1,4 @@
-"""Google ADK adapter for converting Contexa objects to Google ADK objects."""
+"""Google adapter for converting Contexa objects to Google GenAI SDK objects."""
 
 import inspect
 import asyncio
@@ -12,137 +12,208 @@ from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.prompt import ContexaPrompt
 
 
-class GoogleADKAdapter(BaseAdapter):
-    """Google ADK adapter for converting Contexa objects to Google ADK objects."""
+class GoogleAIAdapter(BaseAdapter):
+    """Google adapter for converting Contexa objects to Google GenAI SDK objects."""
     
     def tool(self, tool: ContexaTool) -> Any:
-        """Convert a Contexa tool to a Google ADK tool.
+        """Convert a Contexa tool to a Google GenAI tool function.
         
         Args:
             tool: The Contexa tool to convert
             
         Returns:
-            A Google ADK Tool object
+            A function that can be passed to Google GenAI SDK as a tool
         """
         try:
-            from adk import Tool
+            from google.genai import types
         except ImportError:
             raise ImportError(
-                "Google ADK not found. Install with `pip install contexa-sdk[google-adk]`."
+                "Google GenAI SDK not found. Install with `pip install contexa-sdk[google]`."
             )
             
         # Create a sync wrapper function for our async tool
-        def sync_tool_fn(**kwargs):
+        def google_tool_fn(**kwargs):
+            """Function docstring will be replaced."""
             return asyncio.run(tool(**kwargs))
             
-        # Create the Google ADK tool
-        return Tool.from_function(
-            function=sync_tool_fn,
-            name=tool.name,
-            description=tool.description,
-        )
+        # Update the docstring
+        google_tool_fn.__name__ = tool.name
+        google_tool_fn.__doc__ = tool.description
+        
+        return google_tool_fn
         
     def model(self, model: ContexaModel) -> Any:
-        """Convert a Contexa model to a Google ADK model.
+        """Convert a Contexa model to a Google GenAI model.
         
         Args:
             model: The Contexa model to convert
             
         Returns:
-            A Google ADK Model object
+            A Google GenAI model name or object
         """
         try:
-            from adk import GeminiModel
+            from google import genai
         except ImportError:
             raise ImportError(
-                "Google ADK not found. Install with `pip install contexa-sdk[google-adk]`."
+                "Google GenAI SDK not found. Install with `pip install contexa-sdk[google]`."
             )
             
-        # If it's a Google model, create a GeminiModel instance
-        if model.provider == "google":
-            return GeminiModel(
-                model_name=model.model_name,
-                api_key=model.config.api_key,
-            )
+        # Initialize Google AI SDK client with appropriate credentials
+        api_key = model.config.get("api_key", None)
+        
+        # If it's a Google model, use the appropriate initialization
+        if api_key:
+            client = genai.Client(api_key=api_key)
         else:
-            # For non-Google models, create a custom wrapper
-            # This is a simplified example and may need more work
-            # to properly integrate with Google ADK
-            from adk.core import Model
-            
-            class ContexaModelWrapper(Model):
-                def __init__(self, contexa_model):
-                    self.contexa_model = contexa_model
-                    
-                def generate(self, prompt, **kwargs):
-                    message = ModelMessage(role="user", content=prompt)
-                    response = asyncio.run(
-                        self.contexa_model.generate([message])
-                    )
-                    return response.content
-                    
-            return ContexaModelWrapper(model)
-            
+            # Try to use environment variables or application default credentials
+            client = genai.Client()
+        
+        # Return the model name which can be used with the client
+        return {
+            "client": client,
+            "model_name": model.model_name
+        }
+        
     def agent(self, agent: ContexaAgent) -> Any:
-        """Convert a Contexa agent to a Google ADK agent.
+        """Convert a Contexa agent to a Google agent-like wrapper.
+        
+        Google GenAI doesn't have a specific agent framework like OpenAI,
+        so we'll create a wrapper that provides similar functionality.
         
         Args:
             agent: The Contexa agent to convert
             
         Returns:
-            A Google ADK Agent object
+            A Google agent-like object
         """
         try:
-            from adk import Agent
+            from google import genai
+            from google.genai import types
         except ImportError:
             raise ImportError(
-                "Google ADK not found. Install with `pip install contexa-sdk[google-adk]`."
+                "Google GenAI SDK not found. Install with `pip install contexa-sdk[google]`."
             )
             
         # Convert the model
-        adk_model = self.model(agent.model)
+        model_info = self.model(agent.model)
+        client = model_info["client"]
+        model_name = model_info["model_name"]
         
         # Convert the tools
-        adk_tools = [self.tool(tool) for tool in agent.tools]
+        google_tools = [self.tool(tool) for tool in agent.tools]
         
-        # Create the Google ADK agent
-        adk_agent = Agent(
-            model=adk_model,
-            tools=adk_tools,
+        # Create a wrapper class that behaves like an agent
+        class GoogleAIAgentWrapper:
+            def __init__(self, client, model_name, tools, system_prompt, name):
+                self.client = client
+                self.model_name = model_name
+                self.tools = tools
+                self.system_prompt = system_prompt
+                self.name = name
+                
+            async def run(self, input_text):
+                """Run the agent on the given input."""
+                # Prepare the messages
+                messages = [
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(input_text)]
+                    )
+                ]
+                
+                # If system prompt is provided, add it
+                if self.system_prompt:
+                    messages.insert(0, types.Content(
+                        role="system",
+                        parts=[types.Part.from_text(self.system_prompt)]
+                    ))
+                
+                # Generate content with tools
+                response = await asyncio.to_thread(
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=messages,
+                    config=types.GenerateContentConfig(
+                        tools=self.tools,
+                    ),
+                )
+                
+                # Handle tool calls if any
+                if hasattr(response, "function_calls") and response.function_calls:
+                    # Process function calls - simplified implementation
+                    function_results = []
+                    for func_call in response.function_calls:
+                        function_name = func_call.name
+                        for tool in self.tools:
+                            if getattr(tool, "__name__", "") == function_name:
+                                args = func_call.args
+                                result = tool(**args)
+                                function_results.append({
+                                    "name": function_name,
+                                    "output": result
+                                })
+                    
+                    # Create a new message with the tool outputs
+                    tool_message = types.Content(
+                        role="tool",
+                        parts=[types.Part.from_text(json.dumps(function_results))]
+                    )
+                    
+                    # Append all messages and the tool results
+                    messages.append(response.candidates[0].content)
+                    messages.append(tool_message)
+                    
+                    # Generate final response after tool use
+                    final_response = await asyncio.to_thread(
+                        self.client.models.generate_content,
+                        model=self.model_name,
+                        contents=messages,
+                    )
+                    
+                    return final_response.text
+                
+                # If no tool calls, return the response directly
+                return response.text
+        
+        # Create the agent wrapper
+        google_agent = GoogleAIAgentWrapper(
+            client=client,
+            model_name=model_name,
+            tools=google_tools,
             system_prompt=agent.system_prompt,
             name=agent.name,
         )
         
         # Store the original Contexa agent for reference and handoff support
-        adk_agent.__contexa_agent__ = agent
+        google_agent.__contexa_agent__ = agent
         
-        return adk_agent
+        return google_agent
         
     def prompt(self, prompt: ContexaPrompt) -> Any:
-        """Convert a Contexa prompt to a format usable by Google ADK.
+        """Convert a Contexa prompt to a format usable by Google GenAI SDK.
         
         Args:
             prompt: The Contexa prompt to convert
             
         Returns:
-            A string template usable by Google ADK
+            A string template usable by Google GenAI SDK
         """
-        # Google ADK typically uses string templates
+        # Google GenAI typically just uses string templates
         return prompt.template
     
-    async def handoff_to_google_adk_agent(
+    async def handoff_to_google_agent(
         self,
         source_agent: ContexaAgent,
-        target_agent: Any,  # Google ADK Agent object
+        target_agent: Any,  # Google agent wrapper
         query: str,
         context: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Handle handoff to a Google ADK agent.
+        """Handle handoff to a Google agent.
         
         Args:
             source_agent: The Contexa agent handing off the task
-            target_agent: The Google ADK Agent to hand off to
+            target_agent: The Google agent wrapper to hand off to
             query: The query to send to the target agent
             context: Additional context to pass to the target agent
             metadata: Additional metadata for the handoff
@@ -150,15 +221,9 @@ class GoogleADKAdapter(BaseAdapter):
         Returns:
             The target agent's response
         """
-        try:
-            from adk import Agent
-        except ImportError:
-            raise ImportError(
-                "Google ADK not found. Install with `pip install contexa-sdk[google-adk]`."
-            )
-            
-        if not isinstance(target_agent, Agent):
-            raise TypeError("target_agent must be a Google ADK Agent object")
+        # Check if the target agent is a Google agent wrapper
+        if not hasattr(target_agent, "__contexa_agent__"):
+            raise TypeError("target_agent must be a Google agent wrapper created by this adapter")
             
         # Create handoff data
         handoff_data = HandoffData(
@@ -175,8 +240,7 @@ class GoogleADKAdapter(BaseAdapter):
         # Record the handoff in the source agent's memory
         source_agent.memory.add_handoff(handoff_data)
         
-        # Google ADK has different ways to handle system prompts, so we'll modify the query
-        # to include the handoff context instead
+        # Format the query to include handoff context
         context_str = json.dumps(handoff_data.context, indent=2)
         enhanced_query = (
             f"[Task handoff from agent '{source_agent.name}']\n\n"
@@ -185,21 +249,20 @@ class GoogleADKAdapter(BaseAdapter):
         )
         
         # Run the target agent with the enhanced query
-        response = await asyncio.to_thread(target_agent.generate, enhanced_query)
+        response = await target_agent.run(enhanced_query)
         
         # Update the handoff data with the result
         handoff_data.result = response
         
-        # Update the Contexa agent associated with the Google ADK agent if it exists
-        if hasattr(target_agent, "__contexa_agent__"):
-            target_contexa_agent = target_agent.__contexa_agent__
-            target_contexa_agent.receive_handoff(handoff_data)
+        # Update the Contexa agent associated with the Google agent if it exists
+        target_contexa_agent = target_agent.__contexa_agent__
+        target_contexa_agent.receive_handoff(handoff_data)
             
         return response
 
 
 # Create a singleton instance
-_adapter = GoogleADKAdapter()
+_adapter = GoogleAIAdapter()
 
 # Expose the adapter methods at the module level
 tool = _adapter.tool
@@ -215,8 +278,8 @@ async def handoff(
     context: Optional[Dict[str, Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Handle handoff from a Contexa agent to a Google ADK agent."""
-    return await _adapter.handoff_to_google_adk_agent(
+    """Handle handoff from a Contexa agent to a Google agent."""
+    return await _adapter.handoff_to_google_agent(
         source_agent=source_agent,
         target_agent=target_agent,
         query=query,

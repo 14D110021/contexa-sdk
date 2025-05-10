@@ -22,29 +22,26 @@ class OpenAIAdapter(BaseAdapter):
             tool: The Contexa tool to convert
             
         Returns:
-            An OpenAI Agents SDK Tool object
+            An OpenAI Agents SDK function_tool
         """
         try:
-            from openai_agents import Tool
+            from agents import function_tool
         except ImportError:
             raise ImportError(
                 "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
             )
             
-        # Get the tool schema for OpenAI
-        schema = tool.schema.model_json_schema()
-        
-        # Create an async function that will call our tool
-        async def tool_function(**kwargs):
+        # Create a wrapper function that will call our tool
+        @function_tool
+        async def contexa_tool(**kwargs):
+            """Tool description from Contexa."""
             return await tool(**kwargs)
             
-        # Create the OpenAI Agent SDK tool
-        return Tool.from_function(
-            function=tool_function,
-            name=tool.name,
-            description=tool.description,
-            schema=schema,
-        )
+        # Update the tool metadata to match the original Contexa tool
+        contexa_tool.__name__ = tool.name
+        contexa_tool.__doc__ = tool.description
+        
+        return contexa_tool
         
     def model(self, model: ContexaModel) -> Any:
         """Convert a Contexa model to an OpenAI model.
@@ -53,10 +50,10 @@ class OpenAIAdapter(BaseAdapter):
             model: The Contexa model to convert
             
         Returns:
-            An OpenAI model name/identifier (str)
+            A model string identifier compatible with OpenAI Agents SDK
         """
-        # For OpenAI, we just need the model name
-        # Typically use OpenAI models directly with this adapter
+        # For OpenAI Agents SDK, we just need the model name
+        # Can be either an OpenAI model name or a supported model via LiteLLM
         return model.model_name
         
     def agent(self, agent: ContexaAgent) -> Any:
@@ -69,27 +66,21 @@ class OpenAIAdapter(BaseAdapter):
             An OpenAI Agents SDK Agent object
         """
         try:
-            from openai_agents import Agent, OpenAIModel
+            from agents import Agent
         except ImportError:
             raise ImportError(
                 "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
             )
             
-        # Convert the model
-        # OpenAI Agent SDK expects an OpenAI model name
-        openai_model = OpenAIModel(
-            model=self.model(agent.model),
-            api_key=agent.config.api_key,
-        )
-        
         # Convert the tools
         openai_tools = [self.tool(tool) for tool in agent.tools]
         
         # Create the OpenAI agent
         openai_agent = Agent(
-            model=openai_model,
+            name=agent.name,
+            instructions=agent.system_prompt,
             tools=openai_tools,
-            system_prompt=agent.system_prompt,
+            model=self.model(agent.model),
         )
         
         # Store the original Contexa agent for reference and handoff support
@@ -119,8 +110,8 @@ class OpenAIAdapter(BaseAdapter):
     ) -> str:
         """Handle handoff to an OpenAI agent.
         
-        The OpenAI Agents SDK doesn't have built-in handoff functionality,
-        but we can emulate it by adding context to the system prompt.
+        The OpenAI Agents SDK has built-in handoff functionality now,
+        but we'll use our approach to maintain consistency.
         
         Args:
             source_agent: The Contexa agent handing off the task
@@ -133,7 +124,7 @@ class OpenAIAdapter(BaseAdapter):
             The target agent's response
         """
         try:
-            from openai_agents import Agent
+            from agents import Agent, Runner
         except ImportError:
             raise ImportError(
                 "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
@@ -157,24 +148,19 @@ class OpenAIAdapter(BaseAdapter):
         # Record the handoff in the source agent's memory
         source_agent.memory.add_handoff(handoff_data)
         
-        # Modify the system prompt to include handoff context
-        original_prompt = target_agent.system_prompt
+        # Modify the handoff query to include context
         context_str = json.dumps(handoff_data.context, indent=2)
-        handoff_prompt = (
-            f"{original_prompt}\n\n"
-            f"IMPORTANT: This is a task handoff from agent '{source_agent.name}' "
-            f"(ID: {source_agent.agent_id}).\n"
-            f"Handoff context: {context_str}"
+        enhanced_query = (
+            f"[Task handoff from agent '{source_agent.name}']\n\n"
+            f"CONTEXT: {context_str}\n\n"
+            f"TASK: {query}"
         )
         
-        # Update the agent with the new prompt
-        target_agent.system_prompt = handoff_prompt
+        # Run the target agent with the enhanced query using the Runner
+        result = await Runner.run(target_agent, enhanced_query)
         
-        # Run the target agent with the query
-        response = await target_agent.run(query)
-        
-        # Reset the system prompt back to the original
-        target_agent.system_prompt = original_prompt
+        # Extract the final output from the result
+        response = str(result.final_output)
         
         # Update the handoff data with the result
         handoff_data.result = response

@@ -137,6 +137,7 @@ For more detailed documentation, see the following guides:
 - [Observability](README_OBSERVABILITY.md)
 - [MCP Integration](README_MCP.md)
 - [New Developer Onboarding](ONBOARDING.md)
+- [Framework Compatibility](FRAMEWORK_COMPATIBILITY.md)
 
 ## Examples
 

@@ -25,8 +25,8 @@ class LangChainAdapter(BaseAdapter):
             A LangChain BaseTool object
         """
         try:
-            from langchain.tools import BaseTool
-            from langchain.pydantic_v1 import BaseModel, create_model
+            from langchain_core.tools import BaseTool, StructuredTool
+            from langchain_core.pydantic_v1 import BaseModel, create_model
             import asyncio
         except ImportError:
             raise ImportError(
@@ -66,15 +66,14 @@ class LangChainAdapter(BaseAdapter):
             A LangChain ChatModel object
         """
         try:
-            from langchain.chat_models.base import BaseChatModel
-            from langchain.schema import (
+            from langchain_core.language_models.chat_models import BaseChatModel
+            from langchain_core.messages import (
                 AIMessage,
                 BaseMessage,
-                ChatGeneration,
-                ChatResult,
                 HumanMessage,
                 SystemMessage,
             )
+            from langchain_core.outputs import ChatGeneration, ChatResult
         except ImportError:
             raise ImportError(
                 "LangChain not found. Install with `pip install contexa-sdk[langchain]`."
@@ -143,8 +142,9 @@ class LangChainAdapter(BaseAdapter):
             A LangChain AgentExecutor
         """
         try:
-            from langchain.agents import AgentExecutor, initialize_agent
-            from langchain.agents import AgentType
+            from langchain.agents import AgentExecutor
+            from langchain.agents.openai_functions_agent.base import OpenAIFunctionsAgent
+            from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
         except ImportError:
             raise ImportError(
                 "LangChain not found. Install with `pip install contexa-sdk[langchain]`."
@@ -156,18 +156,35 @@ class LangChainAdapter(BaseAdapter):
         # Convert the tools
         lc_tools = [self.tool(tool) for tool in agent.tools]
         
+        # Create a system message with the agent's system prompt
+        system_message = agent.system_prompt or "You are a helpful assistant."
+        
+        # Create a prompt for the agent
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system_message),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
+        
         # Initialize the agent
-        lc_agent = initialize_agent(
-            tools=lc_tools,
+        lc_agent = OpenAIFunctionsAgent(
             llm=lc_model,
-            agent=AgentType.OPENAI_FUNCTIONS,
+            tools=lc_tools,
+            prompt=prompt
+        )
+        
+        # Create the agent executor
+        lc_agent_executor = AgentExecutor(
+            agent=lc_agent,
+            tools=lc_tools,
             verbose=True,
         )
         
         # Store the original Contexa agent for reference and handoff support
-        lc_agent.__contexa_agent__ = agent
+        lc_agent_executor.__contexa_agent__ = agent
         
-        return lc_agent
+        return lc_agent_executor
         
     def prompt(self, prompt: ContexaPrompt) -> Any:
         """Convert a Contexa prompt to a LangChain prompt.
@@ -179,8 +196,8 @@ class LangChainAdapter(BaseAdapter):
             A LangChain ChatPromptTemplate
         """
         try:
-            from langchain.prompts import ChatPromptTemplate
-            from langchain.prompts.chat import SystemMessage, HumanMessagePromptTemplate
+            from langchain_core.prompts import ChatPromptTemplate
+            from langchain_core.messages import SystemMessage, HumanMessagePromptTemplate
         except ImportError:
             raise ImportError(
                 "LangChain not found. Install with `pip install contexa-sdk[langchain]`."
@@ -214,7 +231,7 @@ class LangChainAdapter(BaseAdapter):
         """
         try:
             from langchain.agents import AgentExecutor
-            from langchain.schema import HumanMessage, SystemMessage
+            from langchain_core.messages import HumanMessage, SystemMessage
         except ImportError:
             raise ImportError(
                 "LangChain not found. Install with `pip install contexa-sdk[langchain]`."

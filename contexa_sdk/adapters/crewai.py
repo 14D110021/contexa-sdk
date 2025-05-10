@@ -23,27 +23,27 @@ class CrewAIAdapter(BaseAdapter):
             tool: The Contexa tool to convert
             
         Returns:
-            A CrewAI Tool object
+            A CrewAI tool object
         """
         try:
-            from crewai import Tool
+            from crewai.tools import tool as crewai_tool_decorator
             import asyncio
         except ImportError:
             raise ImportError(
                 "CrewAI not found. Install with `pip install contexa-sdk[crewai]`."
             )
             
-        # Create a sync wrapper function for the async tool
-        @functools.wraps(tool.__call__)
-        def sync_tool_fn(**kwargs):
+        # Create a wrapper function for the tool
+        @crewai_tool_decorator(tool.name)
+        def contexa_tool_wrapper(**kwargs):
+            """Tool docstring will be replaced."""
+            # Run the async function in a new event loop
             return asyncio.run(tool(**kwargs))
             
-        # Create the CrewAI tool
-        return Tool(
-            name=tool.name,
-            description=tool.description,
-            func=sync_tool_fn,
-        )
+        # Update the tool's docstring with the original description
+        contexa_tool_wrapper.__doc__ = tool.description
+        
+        return contexa_tool_wrapper
         
     def model(self, model: ContexaModel) -> Any:
         """Convert a Contexa model to a CrewAI agent model.
@@ -104,6 +104,7 @@ class CrewAIAdapter(BaseAdapter):
             llm=crew_model,
             tools=crew_tools,
             verbose=True,
+            allow_delegation=True  # Enable delegation by default
         )
         
         # Attach the original Contexa agent for reference
@@ -113,12 +114,14 @@ class CrewAIAdapter(BaseAdapter):
         task = Task(
             description="Respond to user queries using your tools and knowledge",
             agent=crew_agent,
+            expected_output="A detailed and helpful response"
         )
         
         crew = Crew(
             agents=[crew_agent],
             tasks=[task],
             verbose=True,
+            process=Crew.SEQUENTIAL  # Default to sequential processing
         )
         
         # Add handoff method to the crew
@@ -199,7 +202,7 @@ class CrewAIAdapter(BaseAdapter):
             crew_agent = target_crew.agents[0]
             
             # Update the CrewAI agent with handoff context
-            # We'll append it to the agent's backstory to provide context
+            # Provide context as both backstory and memory for comprehensive awareness
             updated_backstory = (
                 f"{crew_agent.backstory}\n\n"
                 f"IMPORTANT CONTEXT: This is a handoff from agent '{source_agent.name}'. "
@@ -220,7 +223,7 @@ class CrewAIAdapter(BaseAdapter):
             target_crew.tasks = [task]
             
         # Execute the crew to run the task
-        response = target_crew.kickoff()
+        response = target_crew.kickoff(inputs={"handoff_context": json.dumps(handoff_data.context)})
         
         # Update the handoff data with the result
         handoff_data.result = response
