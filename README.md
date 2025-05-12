@@ -1,5 +1,9 @@
 # Contexa SDK
 
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-0.1.0-green)](https://github.com/rupeshrajdev/contexa_sdk)
+
 **Contexa SDK** is a comprehensive framework for standardizing AI agent development, deployment, and interoperability across multiple frameworks. It provides a unified layer that enables agent components (tools, models, prompts, etc.) to be seamlessly converted between different agent frameworks like LangChain, CrewAI, OpenAI Agent SDK, and Google ADK.
 
 ## Mission
@@ -23,10 +27,10 @@ At Contexa, we're building a standardized "context layer" for AI agents. Our SDK
 ### Multi-Framework Adapters
 
 Convert Contexa objects to native framework objects for:
-- LangChain (≥0.1)
-- CrewAI (≥0.110)
-- OpenAI Agents SDK (≥0.4)
-- Google ADK (≥0.3)
+- LangChain (≥0.1.0)
+- CrewAI (≥0.110.0)
+- OpenAI Agents SDK (≥1.2.0)
+- Google ADK (≥0.3.0)
 
 ### Agent Runtime
 
@@ -47,6 +51,15 @@ Convert Contexa objects to native framework objects for:
 - **MCP Protocol Support**: Build and consume Model Context Protocol compatible services
 - **Agent-as-MCP-Server**: Expose agents as MCP-compatible endpoints
 - **Remote Agent Integration**: Invoke remote agents via the MCP protocol
+
+### NEW! Agent Orchestration
+
+Our new orchestration module enables sophisticated multi-agent collaboration:
+
+- **Agent Teams**: Organize agents into teams with defined roles and responsibilities
+- **Structured Communication**: Direct message passing between agents with typed content
+- **Task Handoffs**: Formal delegation of tasks between agents with validation
+- **Shared Workspaces**: Collaborative environments for sharing artifacts with versioning
 
 ## Installation
 
@@ -117,7 +130,55 @@ oa_agent = openai.agent(agent)
 result = await oa_agent.execute("What's new in AI?")
 ```
 
-### 4. Deploy Your Agent
+### 4. Using the New Orchestration Features
+
+```python
+from contexa_sdk.orchestration import AgentTeam, Message, Channel, TaskHandoff, SharedWorkspace
+
+# Create a team of agents
+research_team = AgentTeam(
+    name="Research Team",
+    expertise=["quantum computing", "medical research"]
+)
+
+# Add agents to the team
+research_team.add_agent(researcher_agent, role="lead")
+research_team.add_agent(assistant_researcher, role="specialist")
+research_team.add_agent(validation_agent, role="validator")
+
+# Set up communication channel
+team_channel = Channel(name="research_channel")
+
+# Send a message between agents
+message = Message(
+    sender_id="researcher_agent",
+    recipient_id="validation_agent", 
+    content="Please validate these findings",
+    message_type="request"
+)
+team_channel.send(message)
+
+# Create a shared workspace for collaboration
+workspace = SharedWorkspace(name="Research Project")
+
+# Add a document to the workspace
+doc_id = workspace.add_artifact(
+    name="Research Findings",
+    content={"topic": "Quantum Computing", "findings": [...]},
+    creator_id="researcher_agent"
+)
+
+# Execute a task handoff
+handoff = TaskHandoff(
+    sender=researcher_agent,
+    recipient=validation_agent,
+    task_description="Validate research findings",
+    input_data={"doc_id": doc_id}
+)
+result = handoff.execute()
+```
+
+### 5. Deploy Your Agent
 
 ```bash
 # Build and deploy your agent
@@ -136,6 +197,7 @@ For more detailed documentation, see the following guides:
 - [Agent Runtime](README_RUNTIME.md)
 - [Observability](README_OBSERVABILITY.md)
 - [MCP Integration](README_MCP.md)
+- [Agent Orchestration](docs/orchestration.md)
 - [New Developer Onboarding](ONBOARDING.md)
 - [Framework Compatibility](FRAMEWORK_COMPATIBILITY.md)
 
@@ -150,6 +212,7 @@ The `examples/` directory contains various examples demonstrating different feat
 - [Cluster Runtime](examples/cluster_runtime_example.py)
 - [Observability Setup](examples/observability_example.py)
 - [MCP Integration](examples/mcp_agent_example.py)
+- [Orchestration Example](examples/orchestration_example.py)
 
 ### Advanced AI Agent Examples
 
