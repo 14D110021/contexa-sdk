@@ -15,7 +15,7 @@ The SDK currently supports the following frameworks:
 | LangChain | 0.1.0 | `langchain.py` | `pip install contexa-sdk[langchain]` |
 | CrewAI | 0.110.0 | `crewai.py` | `pip install contexa-sdk[crewai]` |
 | OpenAI Agents SDK | 0.4.0 | `openai.py` | `pip install contexa-sdk[openai]` |
-| Google ADK | 0.3.0 | `google_adk.py` | `pip install contexa-sdk[google-adk]` |
+| Google ADK | 0.5.0 | `google.py` | `pip install contexa-sdk[google]` |
 
 ## Architecture
 
@@ -55,7 +55,7 @@ async def web_search(inp: SearchInput) -> str:
     return f"Top hit for {inp.query}"
 
 # Convert to framework-specific tools
-from contexa_sdk.adapters import langchain, crewai, openai, google_adk
+from contexa_sdk.adapters import langchain, crewai, openai, google
 
 # LangChain tool
 lc_tool = langchain.tool(web_search)
@@ -67,7 +67,7 @@ crew_tool = crewai.tool(web_search)
 oa_tool = openai.tool(web_search)
 
 # Google ADK tool
-adk_tool = google_adk.tool(web_search)
+google_tool = google.tool(web_search)
 ```
 
 ### Converting Models
@@ -82,7 +82,7 @@ model = ContexaModel(provider="openai", model_id="gpt-4o")
 lc_model = langchain.model(model)
 crew_model = crewai.model(model)
 oa_model = openai.model(model)
-adk_model = google_adk.model(model)
+adk_model = google.model(model)
 ```
 
 ### Converting Agents
@@ -102,7 +102,7 @@ agent = ContexaAgent(
 lc_agent = langchain.agent(agent)
 crew_agent = crewai.agent(agent)
 oa_agent = openai.agent(agent)
-adk_agent = google_adk.agent(agent)
+adk_agent = google.agent(agent)
 ```
 
 ## Agent Handoffs
@@ -153,12 +153,6 @@ Each adapter maps Contexa objects to framework-specific objects:
 | LangChain | `langchain_core.tools.BaseTool` | `AgentExecutor` | Uses `@tool` decorator or `BaseTool` subclass |
 | CrewAI | `crewai.Tool` | `Crew` | CrewAI treats any callable as a tool |
 | OpenAI | `openai_agents.Tool` | `openai_agents.Agent` | Generates JSON schema for tools |
-| Google ADK | `adk.Tool` | `adk.Agent` | Similar to OpenAI, generates function specs |
+| Google ADK | `google.adk.Tool` | `google.adk.Agent` | Follows ADK's agent creation pattern |
 
-For more details on the implementation of each adapter, see the source code in the `contexa_sdk/adapters/` directory.
-
-## Examples
-
-For complete examples of multi-framework integration, see:
-- [Multi-Framework Integration Example](examples/multi_framework_integration.py)
-- [Agent Handoff Example](examples/agent_handoff.py) 
+For more details on the implementation of each adapter, see the source code in the `contexa_sdk/adapters/`

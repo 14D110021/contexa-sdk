@@ -11,7 +11,7 @@ Contexa SDK currently supports the following frameworks:
 | LangChain | 0.1.0+ | `pip install contexa-sdk[langchain]` |
 | CrewAI | 0.110.0+ | `pip install contexa-sdk[crewai]` |
 | OpenAI Agents SDK | 0.0.14+ | `pip install contexa-sdk[openai]` |
-| Google GenAI | 0.3.0+ | `pip install contexa-sdk[google]` |
+| Google ADK | 0.5.0+ | `pip install contexa-sdk[google]` |
 
 ## LangChain Integration
 
@@ -105,34 +105,34 @@ openai_agent = openai.agent(contexa_agent)
 
 OpenAI Agents SDK was rebranded and its imports changed from `openai_agents` to `agents`. The primary way to create tools also changed to use the `@function_tool` decorator pattern. Our adapter has been updated to reflect these changes.
 
-## Google GenAI Integration
+## Google ADK Integration
 
-Our Google GenAI integration provides compatibility with Google's Generative AI suite (v0.3.0+). Our adapter supports:
+Our Google ADK integration provides compatibility with Google's Agent Development Kit (v0.5.0+), a code-first toolkit for building sophisticated AI agents. Our adapter supports:
 
-- Converting Contexa tools to Google GenAI function tools
-- Adapting Contexa models to Google GenAI models
-- Creating agent-like wrappers that provide similar functionality to other frameworks
-- Supporting function calling and tool usage
-- Integration with both Gemini and PaLM models
+- Converting Contexa tools to Google ADK agent tools
+- Adapting Contexa models to Google ADK model configurations
+- Creating Google ADK agents from Contexa agent definitions
+- Supporting multi-agent composition via ADK's agent hierarchies
+- Leveraging ADK's built-in evaluation and deployment capabilities
 
 ### Key Components
 
 ```python
-from contexa_sdk.adapters import google_adk
+from contexa_sdk.adapters import google
 
-# Convert Contexa tool to Google GenAI tool function
-google_tool = google_adk.tool(contexa_tool)
+# Convert Contexa tool to Google ADK tool
+google_tool = google.tool(contexa_tool)
 
-# Convert Contexa model to Google GenAI model
-google_model = google_adk.model(contexa_model)
+# Convert Contexa model to Google ADK model configuration
+google_model = google.model(contexa_model)
 
-# Convert Contexa agent to Google GenAI agent wrapper
-google_agent = google_adk.agent(contexa_agent)
+# Convert Contexa agent to Google ADK agent
+google_agent = google.agent(contexa_agent)
 ```
 
 ### Latest API Changes
 
-Google renamed their Python SDK to `google-genai` and significantly enhanced their function calling capabilities. Our adapter has been updated to work with these new APIs.
+Google ADK continues to evolve rapidly with new features for agent development. Our adapter is designed to work with ADK's latest patterns, including their agent hierarchy model, tool system, and LLM integration.
 
 ## Handling Framework Updates
 

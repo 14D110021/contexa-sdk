@@ -30,7 +30,7 @@ Convert Contexa objects to native framework objects for:
 - LangChain (≥0.1.0)
 - CrewAI (≥0.110.0)
 - OpenAI Agents SDK (≥1.2.0)
-- Google ADK (≥0.3.0)
+- Google ADK (≥0.5.0)
 
 ### Agent Runtime
 
@@ -71,7 +71,7 @@ pip install contexa-sdk
 pip install contexa-sdk[langchain]  # For LangChain support
 pip install contexa-sdk[crewai]     # For CrewAI support
 pip install contexa-sdk[openai]     # For OpenAI Agents SDK support
-pip install contexa-sdk[google-adk] # For Google ADK support
+pip install contexa-sdk[google]     # For Google ADK support
 
 # Install with all framework support
 pip install contexa-sdk[all]

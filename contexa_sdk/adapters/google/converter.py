@@ -1,282 +1,224 @@
-"""Converters for Google AI integration."""
+"""Converters for Google ADK integration."""
 
+import inspect
 import asyncio
 import json
-import inspect
-from typing import Any, Dict, List, Optional, Union, Callable
+import logging
+from typing import Any, Dict, List, Optional, Union, Callable, Type
+from pydantic import BaseModel
 
-from contexa_sdk.core.tool import BaseTool, RemoteTool
-from contexa_sdk.core.model import ContexaModel, ModelMessage
-from contexa_sdk.core.agent import ContexaAgent, RemoteAgent
-from contexa_sdk.observability import get_logger, trace, SpanKind
+from contexa_sdk.core.tool import BaseTool, ContexaTool, RemoteTool
+from contexa_sdk.core.model import ContexaModel
+from contexa_sdk.core.agent import ContexaAgent, HandoffData
 
-# Create a logger for this module
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
-
-@trace(kind=SpanKind.INTERNAL)
 async def convert_tool_to_google(tool: Union[BaseTool, RemoteTool]) -> Dict[str, Any]:
-    """Convert a Contexa tool to Google Vertex AI format.
+    """Convert a Contexa tool to Google ADK format.
     
     Args:
         tool: The Contexa tool to convert
-        
+    
     Returns:
-        Google AI tool specification
+        Google ADK tool specification
     """
-    logger.info(f"Converting Contexa tool {tool.name} to Google AI format")
+    logger.info(f"Converting Contexa tool {tool.name} to Google ADK format")
     
-    # Create the parameter schema
-    properties = {}
-    required = []
+    try:
+        from google.adk.tools import tool as adk_tool
+    except ImportError:
+        logger.error("Google ADK not installed. Please install google-adk to use this feature.")
+        raise ImportError("Google ADK not installed. Please install google-adk to use this feature.")
     
-    for name, schema in tool.parameters.items():
-        # Copy the schema
-        properties[name] = dict(schema)
-        
-        # Add required parameters to the list
-        if schema.get("required", False):
-            required.append(name)
+    # Get the tool's signature and input model
+    if isinstance(tool, RemoteTool):
+        input_model = tool.input_schema
+    else:
+        input_model = tool.input_type
     
-    # Create the Google function calling format (similar to OpenAI)
-    google_tool = {
-        "function_declarations": [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": properties,
-                    "required": required,
-                },
-            }
-        ]
-    }
+    # Define a function that will be decorated with ADK's @tool decorator
+    async def adk_compatible_tool(*args, **kwargs):
+        """Tool wrapper for Google ADK compatibility."""
+        # Convert kwargs to input model if needed
+        if input_model and issubclass(input_model, BaseModel):
+            input_instance = input_model(**kwargs)
+            result = await tool(input_instance)
+        else:
+            result = await tool(**kwargs)
+        return result
     
-    return google_tool
+    # Create a sync version for ADK compatibility (since ADK often expects sync functions)
+    def sync_adk_tool(*args, **kwargs):
+        """Synchronous wrapper for the async tool."""
+        return asyncio.run(adk_compatible_tool(*args, **kwargs))
+    
+    # Apply Google ADK's tool decorator with proper name and description
+    decorated_tool = adk_tool(
+        name=tool.name,
+        description=tool.description
+    )(sync_adk_tool)
+    
+    # For debugging
+    logger.debug(f"Created ADK tool: {decorated_tool.__name__}")
+    
+    return decorated_tool
 
-
-@trace(kind=SpanKind.INTERNAL)
 async def convert_model_to_google(model: ContexaModel) -> Any:
-    """Convert a Contexa model to Google Vertex AI format.
+    """Convert a Contexa model to Google ADK format.
     
     Args:
         model: The Contexa model to convert
-        
+    
     Returns:
-        Google AI model wrapper
+        Google ADK model configuration
     """
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel
+        from google.adk import settings
     except ImportError:
-        logger.error("Google Vertex AI not installed. Please install google-cloud-aiplatform to use this feature.")
-        raise ImportError("Google Vertex AI not installed. Please install google-cloud-aiplatform to use this feature.")
+        logger.error("Google ADK not installed. Please install google-adk to use this feature.")
+        raise ImportError("Google ADK not installed. Please install google-adk to use this feature.")
     
-    logger.info(f"Converting Contexa model {model.model_name} to Google AI model")
+    logger.info(f"Converting Contexa model {model.model_name} to Google ADK model")
     
-    # Create a class that wraps the Google model
-    class ContexaGoogleAIWrapper:
-        """Google AI wrapper for a Contexa model."""
+    # Map the model name to a Google ADK compatible model name
+    # Latest Google ADK uses Gemini 2.0 models
+    model_mapping = {
+        # Current Gemini models
+        "gemini-pro": "gemini-2.0-flash",
+        "gemini-pro-vision": "gemini-2.0-flash",
+        "gemini-ultra": "gemini-2.0-flash",
         
-        def __init__(self, contexa_model: ContexaModel):
-            """Initialize with a Contexa model."""
-            self.contexa_model = contexa_model
-            self.model_name = contexa_model.model_name
-            self.provider = contexa_model.provider
+        # Legacy models to current models
+        "gemini-1.5-pro": "gemini-2.0-flash",
+        "gemini-1.5-pro-vision": "gemini-2.0-flash",
+        "gemini-1.5-flash": "gemini-2.0-flash",
         
-        async def generate_content(self, contents, **kwargs) -> Any:
-            """Generate content with the model."""
-            from vertexai.generative_models import Content, Part
-            
-            # Convert Google contents to Contexa messages
-            contexa_messages = []
-            
-            # Process the content parts
-            for content in contents:
-                if isinstance(content, str):
-                    # String content is treated as user input
-                    contexa_messages.append(ModelMessage(
-                        role="user",
-                        content=content,
-                    ))
-                elif hasattr(content, "role") and hasattr(content, "parts"):
-                    # Content object with role and parts
-                    role = content.role.lower() if hasattr(content.role, "lower") else content.role
-                    
-                    # Map Google roles to Contexa roles
-                    role_map = {
-                        "user": "user",
-                        "model": "assistant",
-                        "system": "system",
-                    }
-                    
-                    contexa_role = role_map.get(role, "user")
-                    
-                    # Extract text from parts
-                    text_parts = []
-                    for part in content.parts:
-                        if isinstance(part, str):
-                            text_parts.append(part)
-                        elif hasattr(part, "text"):
-                            text_parts.append(part.text)
-                    
-                    contexa_messages.append(ModelMessage(
-                        role=contexa_role,
-                        content=" ".join(text_parts),
-                    ))
-            
-            # Generate a response
-            response = await self.contexa_model.generate(contexa_messages)
-            
-            # Convert back to Google format
-            from vertexai.generative_models import GenerationResponse, GeneratedContent, Part
-            
-            # Create a simplified response
-            google_response = {
-                "candidates": [
-                    {
-                        "content": {
-                            "role": "model",
-                            "parts": [
-                                {"text": response.content}
-                            ]
-                        }
-                    }
-                ],
-            }
-            
-            # Return the response in a format similar to Google's
-            return google_response
-        
-        def generate_content_sync(self, contents, **kwargs) -> Any:
-            """Generate content synchronously."""
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.generate_content(contents, **kwargs))
+        # Non-Google models fallback to Gemini
+        "gpt-4": "gemini-2.0-flash",
+        "gpt-4o": "gemini-2.0-flash",
+        "claude-3-opus": "gemini-2.0-flash",
+    }
     
-    # Create and return the wrapper
-    google_model = ContexaGoogleAIWrapper(model)
-    return google_model
+    # Get the actual model to use, either direct match or fallback
+    adk_model = model_mapping.get(model.model_name, "gemini-2.0-flash")
+    
+    # Configure temperature and other settings if provided in model.config
+    temperature = model.config.get("temperature", 0.7)
+    
+    # Additional configuration
+    model_config = {
+        "model": adk_model,
+        "temperature": temperature,
+    }
+    
+    # Add API key if provided
+    api_key = model.config.get("api_key")
+    if api_key:
+        model_config["api_key"] = api_key
+    
+    return model_config
 
-
-@trace(kind=SpanKind.INTERNAL)
-async def convert_agent_to_google(agent: Union[ContexaAgent, RemoteAgent]) -> Any:
-    """Convert a Contexa agent to Google AI Agent format.
+async def convert_agent_to_google(agent: ContexaAgent) -> Any:
+    """Convert a Contexa agent to Google ADK agent.
     
     Args:
         agent: The Contexa agent to convert
-        
+    
     Returns:
-        Google AI agent wrapper
+        Google ADK agent instance
     """
-    logger.info(f"Converting Contexa agent {agent.name} to Google AI agent")
+    try:
+        from google.adk.agents import Agent as ADKAgent
+    except ImportError:
+        logger.error("Google ADK not installed. Please install google-adk to use this feature.")
+        raise ImportError("Google ADK not installed. Please install google-adk to use this feature.")
     
-    # Create a class that wraps the Google agent
-    class ContexaGoogleAgentWrapper:
-        """Google AI wrapper for a Contexa agent."""
-        
-        def __init__(self, contexa_agent: Union[ContexaAgent, RemoteAgent]):
-            """Initialize with a Contexa agent."""
-            self.contexa_agent = contexa_agent
-        
-        async def generate_content(self, contents, **kwargs) -> Any:
-            """Generate content with the agent."""
-            # Extract the query from the contents
-            query = ""
-            
-            if isinstance(contents, str):
-                query = contents
-            elif hasattr(contents, "__iter__"):
-                for content in contents:
-                    if isinstance(content, str):
-                        query += content + " "
-                    elif hasattr(content, "parts"):
-                        for part in content.parts:
-                            if isinstance(part, str):
-                                query += part + " "
-                            elif hasattr(part, "text"):
-                                query += part.text + " "
-            
-            # Run the Contexa agent
-            result = await self.contexa_agent.run(query.strip())
-            
-            # Create a response in Google's format
-            return {
-                "candidates": [
-                    {
-                        "content": {
-                            "role": "model",
-                            "parts": [
-                                {"text": result}
-                            ]
-                        }
-                    }
-                ],
-            }
-        
-        def generate_content_sync(self, contents, **kwargs) -> Any:
-            """Generate content synchronously."""
-            loop = asyncio.get_event_loop()
-            return loop.run_until_complete(self.generate_content(contents, **kwargs))
+    logger.info(f"Converting Contexa agent {agent.name} to Google ADK agent")
     
-    # Create and return the wrapper
-    google_agent = ContexaGoogleAgentWrapper(agent)
-    return google_agent
+    # Convert the model configuration
+    model_config = await convert_model_to_google(agent.model)
+    
+    # Convert all tools
+    tools = []
+    for tool in agent.tools:
+        google_tool = await convert_tool_to_google(tool)
+        tools.append(google_tool)
+    
+    # Prepare the system instruction
+    instruction = agent.system_prompt
+    if not instruction:
+        instruction = f"You are {agent.name}, {agent.description}"
+    
+    # Create the Google ADK agent
+    adk_agent = ADKAgent(
+        name=agent.name,
+        model=model_config.get("model"),  # Use the mapped model name
+        instruction=instruction,
+        description=agent.description,
+        tools=tools
+    )
+    
+    # Apply temperature if specified
+    if "temperature" in model_config:
+        adk_agent.temperature = model_config["temperature"]
+    
+    # Store reference to original Contexa agent
+    setattr(adk_agent, "_contexa_agent", agent)
+    
+    return adk_agent
 
-
-@trace(kind=SpanKind.INTERNAL)
-async def adapt_google_agent(google_agent: Any) -> RemoteAgent:
-    """Adapt a Google AI agent to work with Contexa.
+async def adapt_google_agent(adk_agent: Any) -> ContexaAgent:
+    """Adapt a Google ADK agent back to a Contexa agent.
     
     Args:
-        google_agent: The Google AI agent to adapt
+        adk_agent: The Google ADK agent to adapt
         
     Returns:
-        Contexa RemoteAgent that wraps the Google AI agent
+        A Contexa agent with equivalent configuration
     """
-    # Create a wrapper that executes the Google agent
-    class GoogleAgentWrapper(RemoteAgent):
-        """Wrapper for a Google AI agent."""
-        
-        def __init__(self, google_agent: Any):
-            """Initialize with a Google AI agent."""
-            super().__init__(
-                endpoint_url="google://agent",  # Dummy endpoint
-                name=getattr(google_agent, "name", "Google AI Agent"),
-                description=getattr(google_agent, "description", ""),
-            )
-            self.google_agent = google_agent
-        
-        async def run(self, query: str, **kwargs) -> str:
-            """Run the Google AI agent."""
-            try:
-                # Generate content with the Google agent
-                if hasattr(self.google_agent, "generate_content"):
-                    # Check if it's async
-                    if asyncio.iscoroutinefunction(self.google_agent.generate_content):
-                        response = await self.google_agent.generate_content(query)
-                    else:
-                        response = self.google_agent.generate_content(query)
-                    
-                    # Extract the text from the response
-                    if hasattr(response, "text"):
-                        return response.text
-                    elif hasattr(response, "candidates") and len(response.candidates) > 0:
-                        candidate = response.candidates[0]
-                        if hasattr(candidate, "content") and hasattr(candidate.content, "parts"):
-                            parts = candidate.content.parts
-                            if parts and hasattr(parts[0], "text"):
-                                return parts[0].text
-                    
-                    # If we couldn't extract the text in a structured way, try as a string
-                    return str(response)
-                else:
-                    # Fall back to treating it as a callable
-                    result = self.google_agent(query)
-                    return str(result)
-            except Exception as e:
-                logger.error(f"Error running Google AI agent: {str(e)}")
-                raise
+    # If this agent was originally converted from a Contexa agent, retrieve the original
+    if hasattr(adk_agent, "_contexa_agent"):
+        return getattr(adk_agent, "_contexa_agent")
     
-    # Create and return the wrapper
-    return GoogleAgentWrapper(google_agent) 
+    try:
+        from google.adk.agents import Agent as ADKAgent
+    except ImportError:
+        logger.error("Google ADK not installed. Please install google-adk to use this feature.")
+        raise ImportError("Google ADK not installed. Please install google-adk to use this feature.")
+    
+    if not isinstance(adk_agent, ADKAgent):
+        raise TypeError("The provided object is not a Google ADK Agent")
+    
+    # Extract the tools from the ADK agent
+    contexa_tools = []
+    for tool in adk_agent.tools:
+        # Create Contexa tool from Google ADK tool
+        tool_name = getattr(tool, "name", tool.__name__)
+        tool_description = getattr(tool, "description", tool.__doc__ or "")
+        
+        # Create a ContexaTool
+        @ContexaTool.register(name=tool_name, description=tool_description)
+        async def contexa_tool(**kwargs):
+            return await asyncio.to_thread(tool, **kwargs)
+        
+        contexa_tools.append(contexa_tool)
+    
+    # Create the Contexa model
+    contexa_model = ContexaModel(
+        provider="google",
+        model_name=adk_agent.model,
+        config={
+            "temperature": getattr(adk_agent, "temperature", 0.7)
+        }
+    )
+    
+    # Create the Contexa agent
+    contexa_agent = ContexaAgent(
+        name=adk_agent.name,
+        description=adk_agent.description,
+        system_prompt=adk_agent.instruction,
+        model=contexa_model,
+        tools=contexa_tools
+    )
+    
+    return contexa_agent 

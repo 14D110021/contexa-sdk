@@ -1,6 +1,6 @@
-"""Google AI adapter for Contexa SDK.
+"""Google ADK adapter for Contexa SDK.
 
-This module provides adapters for converting between Contexa SDK and Google AI
+This module provides adapters for converting between Contexa SDK and Google ADK
 components, enabling interoperability between the two frameworks.
 """
 

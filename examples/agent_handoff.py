@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from contexa_sdk.core.tool import ContexaTool, RemoteTool
 from contexa_sdk.core.model import ContexaModel
 from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.adapters import langchain, crewai, openai, google_adk
+from contexa_sdk.adapters import langchain, crewai, openai, google
 
 
 # Define tools for our agents

@@ -4,7 +4,7 @@ This example shows how to connect agents from different frameworks:
 1. A LangChain agent that handles web research
 2. A CrewAI agent that handles analysis
 3. An OpenAI function-calling agent that handles response generation
-4. A Google Vertex AI agent for final summarization
+4. A Google ADK agent for final summarization
 
 The agents work together to complete a complex task while preserving context
 across framework boundaries.
@@ -143,7 +143,7 @@ async def demonstrate_multi_framework_integration():
         )
     )
     
-    # 4. Summary agent (will be converted to Google AI)
+    # 4. Summary agent (will be converted to Google ADK)
     summary_agent = agents.register(
         "summary_agent",
         ContexaAgent(
@@ -204,17 +204,17 @@ async def demonstrate_multi_framework_integration():
     
     # Convert and adapt Google
     try:
-        print("\n🔄 Converting Summary Agent to Google AI...")
+        print("\n🔄 Converting Summary Agent to Google ADK...")
         google_agent = await convert_agent_to_google(summary_agent)
-        print("✅ Successfully converted to Google AI agent")
+        print("✅ Successfully converted to Google ADK agent")
         
         # Convert Google agent back to Contexa
-        print("\n🔄 Adapting Google AI agent back to Contexa...")
+        print("\n🔄 Adapting Google ADK agent back to Contexa...")
         contexa_google_agent = await adapt_google_agent(google_agent)
-        print("✅ Successfully adapted Google AI agent to Contexa")
+        print("✅ Successfully adapted Google ADK agent to Contexa")
         
     except ImportError:
-        print("❌ Google AI not installed, using original Contexa agent instead")
+        print("❌ Google ADK not installed, using original Contexa agent instead")
         contexa_google_agent = summary_agent
     
     # Demonstrate the end-to-end workflow with agent handoffs
@@ -241,8 +241,8 @@ async def demonstrate_multi_framework_integration():
     generation_result = await contexa_openai_agent.run(generation_query)
     print(f"📝 Generated Content: {generation_result}")
     
-    # 4. Hand off to summary agent (Google AI)
-    print("\n🔄 Handing off to Summary Agent (Google AI)...")
+    # 4. Hand off to summary agent (Google ADK)
+    print("\n🔄 Handing off to Summary Agent (Google ADK)...")
     summary_query = f"Summarize in 50 words: {generation_result}"
     summary_result = await contexa_google_agent.run(summary_query)
     print(f"📋 Final Summary: {summary_result}")

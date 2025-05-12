@@ -1,16 +1,16 @@
-"""Core module for Contexa SDK."""
+"""
+Core components for Contexa SDK.
 
-from contexa_sdk.core.agent import ContexaAgent, RemoteAgent
-from contexa_sdk.core.config import ContexaConfig
-from contexa_sdk.core.memory import ContexaMemory
-from contexa_sdk.core.tool import BaseTool, RemoteTool, ToolResult
+This package provides the fundamental building blocks of Contexa SDK:
+- Tool definitions and registries
+- Agent structures
+- Model interfaces
+- Prompt templates
+"""
 
 __all__ = [
-    "ContexaAgent",
-    "RemoteAgent",
-    "ContexaConfig",
-    "ContexaMemory",
-    "BaseTool",
-    "RemoteTool",
-    "ToolResult",
+    'tool',
+    'agent',
+    'model',
+    'prompt',
 ] 
