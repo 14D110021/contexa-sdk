@@ -11,6 +11,7 @@ setup(
         "langchain": [
             "langchain>=0.1.0",
             "langchain-openai>=0.0.1",
+            "langgraph>=0.0.15",
         ],
         "crewai": [
             "crewai>=0.110.0",
@@ -24,6 +25,7 @@ setup(
         "all": [
             "langchain>=0.1.0",
             "langchain-openai>=0.0.1",
+            "langgraph>=0.0.15",
             "crewai>=0.110.0",
             "openai>=1.2.0",
             "google-adk>=0.5.0",
