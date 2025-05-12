@@ -61,6 +61,10 @@ Our new orchestration module enables sophisticated multi-agent collaboration:
 - **Structured Communication**: Direct message passing between agents with typed content
 - **Task Handoffs**: Formal delegation of tasks between agents with validation
 - **Shared Workspaces**: Collaborative environments for sharing artifacts with versioning
+- **MCP-Compatible Agents**: Standardized agent interfaces based on the Model Context Protocol (MCP)
+- **Capability-Based Discovery**: Find agents by their capabilities rather than identifiers
+- **Streaming Handoffs**: Real-time progressive updates during long-running tasks
+- **Unified Message Envelopes**: Structured communication format for all agent interactions
 
 ## Installation
 
@@ -180,6 +184,61 @@ handoff = TaskHandoff(
 result = handoff.execute()
 ```
 
+### 4.1 Using MCP-Compatible Agents and Handoffs
+
+```python
+from contexa_sdk.orchestration import (
+    MCPAgent, registry, broker, mcp_handoff, 
+    register_contexa_agent, AgentState
+)
+
+# Create an MCP-compatible agent
+research_agent = MCPAgent(
+    agent_id="research-agent",
+    name="Research Agent",
+    description="Finds and summarizes information on topics",
+    capabilities=["research", "summarization"],
+    produces_streaming=True
+)
+
+# Define execution handler
+def research_handler(content):
+    query = content.get("input_data", {}).get("query", "")
+    return {
+        "summary": f"Research summary for '{query}'",
+        "sources": [{"title": "Source 1", "url": "https://example.com/1"}]
+    }
+
+# Set handler and activate agent
+research_agent.set_execution_handler(research_handler)
+research_agent.set_state(AgentState.ACTIVE)
+registry.register(research_agent)
+
+# Convert existing ContexaAgent to MCP agent
+mcp_analysis_agent = register_contexa_agent(analysis_agent)
+
+# Perform handoff between agents
+result = mcp_handoff(
+    source_agent=research_agent,
+    target_agent=mcp_analysis_agent,
+    task_description="Analyze the research findings",
+    input_data={"data": {"research_topic": "quantum computing"}}
+)
+
+# Streaming handoff for real-time updates
+streaming_results = mcp_handoff(
+    source_agent=research_agent,
+    target_agent=mcp_analysis_agent,
+    task_description="Analyze with progress updates",
+    input_data={"data": {"research_topic": "neural networks"}},
+    streaming=True
+)
+
+# Process streaming updates
+async for chunk in streaming_results:
+    print(f"Progress: {chunk.get('chunk', {}).get('progress', 0)}")
+```
+
 ### 5. Deploy Your Agent
 
 ```bash
@@ -200,6 +259,7 @@ For more detailed documentation, see the following guides:
 - [Observability](README_OBSERVABILITY.md)
 - [MCP Integration](README_MCP.md)
 - [Agent Orchestration](docs/orchestration.md)
+- [MCP-Compatible Agents](README_MCP_AGENTS.md)
 - [New Developer Onboarding](ONBOARDING.md)
 - [Framework Compatibility](FRAMEWORK_COMPATIBILITY.md)
 
@@ -216,6 +276,7 @@ The `examples/` directory contains various examples demonstrating different feat
 - [MCP Integration](examples/mcp_agent_example.py)
 - [Orchestration Example](examples/orchestration_example.py)
 - [Agent Visualization](examples/agent_visualization.py)
+- [MCP-Compatible Handoffs](examples/mcp_handoff_example.py)
 
 ### Advanced AI Agent Examples
 
