@@ -221,4 +221,76 @@ async def adapt_google_agent(adk_agent: Any) -> ContexaAgent:
         tools=contexa_tools
     )
     
-    return contexa_agent 
+    return contexa_agent
+
+async def handoff_to_google_agent(
+    source_agent: ContexaAgent,
+    target_adk_agent: Any,
+    query: str,
+    context: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Handle handoff to a Google ADK agent.
+    
+    Args:
+        source_agent: The Contexa agent handing off the task
+        target_adk_agent: The Google ADK agent to hand off to
+        query: The query to send to the target agent
+        context: Additional context to pass to the target agent
+        metadata: Additional metadata for the handoff
+        
+    Returns:
+        The target agent's response
+    """
+    try:
+        from google.adk.agents import Agent as ADKAgent
+        from google.adk.runner import Runner
+    except ImportError:
+        logger.error("Google ADK not installed. Please install google-adk to use this feature.")
+        raise ImportError("Google ADK not installed. Please install google-adk to use this feature.")
+    
+    if not isinstance(target_adk_agent, ADKAgent):
+        raise TypeError("target_adk_agent must be a Google ADK Agent object")
+        
+    # Create handoff data
+    handoff_data = HandoffData(
+        query=query,
+        context=context or {},
+        metadata=metadata or {},
+        source_agent_id=source_agent.agent_id,
+        source_agent_name=source_agent.name,
+    )
+    
+    # Add context from the source agent's memory
+    handoff_data.context["source_agent_memory"] = source_agent.memory.to_dict()
+    
+    # Record the handoff in the source agent's memory
+    source_agent.memory.add_handoff(handoff_data)
+    
+    # Modify the handoff query to include context
+    context_str = json.dumps(handoff_data.context, indent=2)
+    enhanced_query = (
+        f"[Task handoff from agent '{source_agent.name}']\n\n"
+        f"CONTEXT: {context_str}\n\n"
+        f"TASK: {query}"
+    )
+    
+    # Run the target ADK agent with the enhanced query
+    # Google ADK doesn't have a standard Runner API, so we'll use the basic run method
+    response = await target_adk_agent.run(enhanced_query)
+    
+    # Update the handoff data with the result
+    handoff_data.result = response
+    
+    # Update the Contexa agent associated with the ADK agent if it exists
+    if hasattr(target_adk_agent, "_contexa_agent"):
+        target_contexa_agent = target_adk_agent._contexa_agent
+        target_contexa_agent.receive_handoff(handoff_data)
+        
+    return response
+
+# Alias for backward compatibility
+convert_tool = convert_tool_to_google
+convert_model = convert_model_to_google
+convert_agent = convert_agent_to_google
+adapt_agent = adapt_google_agent 
