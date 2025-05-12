@@ -45,6 +45,7 @@ Convert Contexa objects to native framework objects for:
 - **Metrics Collection**: Monitor performance and usage metrics
 - **Tracing**: Follow request flows through multiple agents
 - **OpenTelemetry Compatible**: Integrate with existing observability stacks
+- **Agent Visualization**: Generate interactive graphs of agent relationships, tools, and handoffs
 
 ### MCP Integration
 
@@ -72,6 +73,7 @@ pip install contexa-sdk[langchain]  # For LangChain support
 pip install contexa-sdk[crewai]     # For CrewAI support
 pip install contexa-sdk[openai]     # For OpenAI Agents SDK support
 pip install contexa-sdk[google]     # For Google ADK support
+pip install contexa-sdk[viz]        # For agent visualization support
 
 # Install with all framework support
 pip install contexa-sdk[all]
@@ -213,6 +215,7 @@ The `examples/` directory contains various examples demonstrating different feat
 - [Observability Setup](examples/observability_example.py)
 - [MCP Integration](examples/mcp_agent_example.py)
 - [Orchestration Example](examples/orchestration_example.py)
+- [Agent Visualization](examples/agent_visualization.py)
 
 ### Advanced AI Agent Examples
 

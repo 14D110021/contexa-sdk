@@ -231,6 +231,70 @@ The SDK includes pre-built dashboards for popular monitoring systems:
 - **Datadog**: Use templates from `contexa_sdk/observability/dashboards/datadog`
 - **Elasticsearch/Kibana**: Import from `contexa_sdk/observability/dashboards/kibana`
 
+## Agent Visualization
+
+Contexa SDK provides powerful visualization tools to help understand your agent architecture, tools, and communication patterns:
+
+```python
+from contexa_sdk.observability import draw_graph, get_agent_team_graph, export_graph_to_json
+
+# Visualize an agent's structure (with its tools and handoffs)
+draw_graph(
+    agent,
+    filename="agent_graph",  # Optional: save to a file
+    format="png",            # Output format: png, svg, pdf, etc.
+    theme="light",           # Theme: light or dark
+    show_labels=True,        # Show labels on edges
+    include_tools=True,      # Include tool nodes
+    include_handoffs=True    # Include handoff relationships
+)
+
+# Visualize a team of agents
+get_agent_team_graph(
+    [agent1, agent2, agent3],
+    team_name="Analytics Team",
+    filename="team_graph"
+)
+
+# Export to JSON for web visualization
+graph_data = export_graph_to_json(
+    agent,
+    filename="agent_graph.json"
+)
+```
+
+### Installation
+
+The visualization features require additional dependencies:
+
+```bash
+pip install contexa-sdk[viz]
+```
+
+### Customization
+
+You can customize the visualization appearance:
+
+- **Themes**: Choose between light and dark themes
+- **Formats**: Generate PNG, SVG, PDF, or other formats
+- **Layout**: Control node shapes, colors, and edge styles
+- **Export**: Export to JSON for custom web visualizations using D3.js, Cytoscape, etc.
+
+### Runtime Handoffs
+
+The visualization can capture runtime handoffs between agents, showing the actual communication flow during execution:
+
+```python
+# Run agents with handoffs
+await orchestrator.handoff(target_agent=researcher, query="Research climate change")
+await researcher.handoff(target_agent=analyst, query="Analyze climate data")
+
+# Visualize the runtime handoff graph
+draw_graph(orchestrator, filename="runtime_handoffs")
+```
+
+For a complete visualization example, see [Agent Visualization Example](examples/agent_visualization.py)
+
 ## Context Preservation
 
 Track conversation context across multiple runs:

@@ -22,6 +22,9 @@ setup(
         "google": [
             "google-adk>=0.5.0",
         ],
+        "viz": [
+            "graphviz>=0.20.1",
+        ],
         "all": [
             "langchain>=0.1.0",
             "langchain-openai>=0.0.1",
@@ -29,6 +32,7 @@ setup(
             "crewai>=0.110.0",
             "openai>=1.2.0",
             "google-adk>=0.5.0",
+            "graphviz>=0.20.1",
         ],
     },
     python_requires=">=3.8",
