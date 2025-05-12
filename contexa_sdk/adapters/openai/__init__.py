@@ -1,19 +1,21 @@
-"""OpenAI adapter for Contexa SDK.
+"""OpenAI adapter components for Contexa SDK.
 
-This module provides adapters for converting between Contexa SDK and OpenAI
-components, enabling interoperability between the two frameworks.
+This module provides functions to convert between Contexa objects and OpenAI objects,
+as well as utilities for managing OpenAI threads and assistants.
 """
 
-from contexa_sdk.adapters.openai.converter import (
-    convert_tool_to_openai,
-    convert_model_to_openai,
-    convert_agent_to_openai,
-    adapt_openai_assistant,
+from contexa_sdk.adapters.openai.thread import (
+    get_thread_for_agent,
+    memory_to_thread,
+    thread_to_memory,
+    handoff_to_thread,
+    ThreadManager,
 )
 
 __all__ = [
-    "convert_tool_to_openai",
-    "convert_model_to_openai",
-    "convert_agent_to_openai",
-    "adapt_openai_assistant",
+    "get_thread_for_agent",
+    "memory_to_thread",
+    "thread_to_memory",
+    "handoff_to_thread",
+    "ThreadManager",
 ] 
