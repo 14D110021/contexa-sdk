@@ -35,6 +35,22 @@ class BaseAdapter(ABC):
     def prompt(self, p: ContexaPrompt) -> Any: ...
 ```
 
+All adapters implement a standardized return format for the `model()` method, providing consistent structure across frameworks:
+
+```python
+# Example standardized model conversion
+def model(self, model: ContexaModel) -> Any:
+    """Convert a Contexa model to a framework-specific model."""
+    return {
+        "model_name": model.model_name,
+        "provider": model.provider,
+        "config": model.config,
+        # Framework-specific fields as needed
+    }
+```
+
+This standardization enables seamless interoperability between different framework adapters.
+
 ## Using Adapters
 
 ### Converting Tools
