@@ -49,7 +49,10 @@ class GoogleAIAdapter(BaseAdapter):
             model: The Contexa model to convert
             
         Returns:
-            A Google GenAI model name or object
+            A dictionary containing the model configuration with keys:
+            - client: The Google GenAI client
+            - model_name: The model name
+            - config: Additional configuration
         """
         try:
             from google import genai
@@ -68,10 +71,12 @@ class GoogleAIAdapter(BaseAdapter):
             # Try to use environment variables or application default credentials
             client = genai.Client()
         
-        # Return the model name which can be used with the client
+        # Return a standardized model info dictionary
         return {
             "client": client,
-            "model_name": model.model_name
+            "model_name": model.model_name,
+            "config": model.config,
+            "provider": model.provider,
         }
         
     def agent(self, agent: ContexaAgent) -> Any:

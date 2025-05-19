@@ -63,7 +63,11 @@ class LangChainAdapter(BaseAdapter):
             model: The Contexa model to convert
             
         Returns:
-            A LangChain ChatModel object
+            A dictionary containing the model configuration with keys:
+            - langchain_model: The LangChain model object
+            - model_name: The model name
+            - config: Additional configuration
+            - provider: The model provider
         """
         try:
             from langchain_core.language_models.chat_models import BaseChatModel
@@ -129,8 +133,16 @@ class LangChainAdapter(BaseAdapter):
             @property
             def _llm_type(self) -> str:
                 return f"contexa-{model.provider}"
-                
-        return ContexaChatModel()
+        
+        langchain_model = ContexaChatModel()
+        
+        # Return a standardized model info dictionary
+        return {
+            "langchain_model": langchain_model,
+            "model_name": model.model_name,
+            "config": model.config,
+            "provider": model.provider,
+        }
         
     def agent(self, agent: ContexaAgent) -> Any:
         """Convert a Contexa agent to a LangChain agent.
@@ -151,7 +163,8 @@ class LangChainAdapter(BaseAdapter):
             )
             
         # Convert the model
-        lc_model = self.model(agent.model)
+        model_info = self.model(agent.model)
+        lc_model = model_info["langchain_model"]
         
         # Convert the tools
         lc_tools = [self.tool(tool) for tool in agent.tools]

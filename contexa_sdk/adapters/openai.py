@@ -58,11 +58,32 @@ class OpenAIAdapter(BaseAdapter):
             model: The Contexa model to convert
             
         Returns:
-            A model string identifier compatible with OpenAI Agents SDK
+            A dictionary containing the model configuration with keys:
+            - model_name: The model name
+            - config: Additional configuration
+            - provider: The model provider
         """
-        # For OpenAI Agents SDK, we just need the model name
-        # Can be either an OpenAI model name or a supported model via LiteLLM
-        return model.model_name
+        # For OpenAI Agents SDK, we'll provide a standardized model info dictionary
+        try:
+            from openai import OpenAI
+        except ImportError:
+            pass  # Allow this to fail silently for environments without OpenAI
+            
+        # Attempt to create an OpenAI client if the API key is available
+        client = None
+        if model.config.get("api_key"):
+            try:
+                client = OpenAI(api_key=model.config.get("api_key"))
+            except Exception:
+                # If client creation fails, we'll fall back to returning just the model name
+                pass
+                
+        return {
+            "client": client,
+            "model_name": model.model_name,
+            "config": model.config,
+            "provider": model.provider,
+        }
         
     def agent(self, agent: ContexaAgent) -> Any:
         """Convert a Contexa agent to an OpenAI Agents SDK agent.
@@ -83,12 +104,16 @@ class OpenAIAdapter(BaseAdapter):
         # Convert the tools
         openai_tools = [self.tool(tool) for tool in agent.tools]
         
+        # Convert the model
+        model_info = self.model(agent.model)
+        model_name = model_info["model_name"]
+        
         # Create the OpenAI agent
         openai_agent = Agent(
             name=agent.name,
             instructions=agent.system_prompt,
             tools=openai_tools,
-            model=self.model(agent.model),
+            model=model_name,
         )
         
         # Store the original Contexa agent for reference and handoff support
