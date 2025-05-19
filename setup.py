@@ -18,6 +18,7 @@ setup(
         ],
         "openai": [
             "openai>=1.2.0",
+            "openai-agents>=0.0.3",
         ],
         "google": [
             "google-adk>=0.5.0",
@@ -31,6 +32,7 @@ setup(
             "langgraph>=0.0.15",
             "crewai>=0.110.0",
             "openai>=1.2.0",
+            "openai-agents>=0.0.3",
             "google-adk>=0.5.0",
             "graphviz>=0.20.1",
         ],

@@ -28,6 +28,7 @@ from contexa_sdk.adapters.openai.thread import (
     thread_to_memory,
 )
 
+from openai_agents import Runner
 
 # Define input class for tools
 class SearchInput(BaseModel):
@@ -74,7 +75,6 @@ async def demonstrate_openai_thread_integration():
         query = "What are the latest trends in AI?"
         
         try:
-            from agents import Runner
             result = await Runner.run(openai_agent, query)
             print(f"🔍 Response: {result.final_output}")
             

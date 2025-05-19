@@ -33,7 +33,7 @@ class OpenAIAdapter(BaseAdapter):
             An OpenAI Agents SDK function_tool
         """
         try:
-            from agents import function_tool
+            from openai_agents import function_tool
         except ImportError:
             raise ImportError(
                 "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
@@ -95,7 +95,7 @@ class OpenAIAdapter(BaseAdapter):
             An OpenAI Agents SDK Agent object
         """
         try:
-            from agents import Agent
+            from openai_agents import Agent
         except ImportError:
             raise ImportError(
                 "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
@@ -161,7 +161,7 @@ class OpenAIAdapter(BaseAdapter):
             The target agent's response
         """
         try:
-            from agents import Agent, Runner
+            from openai_agents import Agent, Runner
             from openai import OpenAI
         except ImportError:
             raise ImportError(
