@@ -15,7 +15,10 @@ The SDK currently supports the following frameworks:
 | LangChain | 0.1.0 | `langchain.py` | `pip install contexa-sdk[langchain]` |
 | CrewAI | 0.110.0 | `crewai.py` | `pip install contexa-sdk[crewai]` |
 | OpenAI Agents SDK | 0.4.0 | `openai.py` | `pip install contexa-sdk[openai]` |
-| Google ADK | 0.5.0 | `google.py` | `pip install contexa-sdk[google]` |
+| Google GenAI | 0.3.0 | `google/genai.py` | `pip install contexa-sdk[google-genai]` |
+| Google ADK | 0.5.0 | `google/adk.py` | `pip install contexa-sdk[google-adk]` |
+
+> **Note:** For detailed information about the Google adapters and when to use each one, see [Google Adapters Documentation](docs/google_adapters.md).
 
 ## Architecture
 

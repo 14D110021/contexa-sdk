@@ -20,7 +20,14 @@ setup(
             "openai>=1.2.0",
             "openai-agents>=0.0.3",
         ],
+        "google-genai": [
+            "google-generativeai>=0.3.0",
+        ],
+        "google-adk": [
+            "google-adk>=0.5.0",
+        ],
         "google": [
+            "google-generativeai>=0.3.0",
             "google-adk>=0.5.0",
         ],
         "viz": [
@@ -33,6 +40,7 @@ setup(
             "crewai>=0.110.0",
             "openai>=1.2.0",
             "openai-agents>=0.0.3",
+            "google-generativeai>=0.3.0",
             "google-adk>=0.5.0",
             "graphviz>=0.20.1",
         ],

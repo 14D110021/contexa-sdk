@@ -1,5 +1,4 @@
 # Contexa SDK
-
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.1.0-green)](https://github.com/rupeshrajdev/contexa_sdk)
@@ -73,11 +72,13 @@ Our new orchestration module enables sophisticated multi-agent collaboration:
 pip install contexa-sdk
 
 # Install with specific framework support
-pip install contexa-sdk[langchain]  # For LangChain support
-pip install contexa-sdk[crewai]     # For CrewAI support
-pip install contexa-sdk[openai]     # For OpenAI Agents SDK support
-pip install contexa-sdk[google]     # For Google ADK support
-pip install contexa-sdk[viz]        # For agent visualization support
+pip install contexa-sdk[langchain]    # For LangChain support
+pip install contexa-sdk[crewai]       # For CrewAI support
+pip install contexa-sdk[openai]       # For OpenAI Agents SDK support
+pip install contexa-sdk[google-genai] # For Google GenAI (Gemini) support
+pip install contexa-sdk[google-adk]   # For Google Agent Development Kit support
+pip install contexa-sdk[google]       # For both Google adapters
+pip install contexa-sdk[viz]          # For agent visualization support
 
 # Install with all framework support
 pip install contexa-sdk[all]
@@ -134,6 +135,16 @@ result = await crew_agent.run("What's new in AI?")
 from contexa_sdk.adapters import openai
 oa_agent = openai.agent(agent)
 result = await oa_agent.execute("What's new in AI?")
+
+# Google GenAI
+from contexa_sdk.adapters.google import genai_agent
+genai_assistant = genai_agent(agent)
+result = await genai_assistant.run("What's new in AI?")
+
+# Google ADK
+from contexa_sdk.adapters.google import adk_agent
+adk_assistant = adk_agent(agent)
+result = await adk_assistant.run("What's new in AI?")
 ```
 
 ### 4. Using the New Orchestration Features

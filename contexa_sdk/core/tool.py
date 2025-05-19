@@ -47,7 +47,46 @@ from pydantic import BaseModel, Field, create_model
 from contexa_sdk.core.config import ContexaConfig
 
 
-class ContexaTool:
+class BaseTool:
+    """Base class for all tools in Contexa SDK.
+    
+    This is the abstract base class that all tool types derive from,
+    providing the core interface that all tools must implement.
+    
+    Attributes:
+        name (str): Human-readable name of the tool
+        description (str): Detailed description of what the tool does
+        tool_id (str): Unique identifier for the tool
+    """
+    
+    name: str
+    description: str
+    tool_id: str
+    
+    async def __call__(self, **kwargs) -> Any:
+        """Call the tool with the given inputs.
+        
+        Args:
+            **kwargs: The input parameters for the tool
+            
+        Returns:
+            The result from the tool execution
+            
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses
+        """
+        raise NotImplementedError("Tool subclasses must implement __call__")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the tool to a dictionary.
+        
+        Returns:
+            A dictionary representation of the tool with its metadata
+        """
+        raise NotImplementedError("Tool subclasses must implement to_dict")
+
+
+class ContexaTool(BaseTool):
     """Base class for Contexa tools.
     
     ContexaTool represents a callable function or method that can be used by agents
@@ -221,10 +260,10 @@ class ContexaTool:
         return decorator
 
 
-class RemoteTool(ContexaTool):
+class RemoteTool(BaseTool):
     """A tool that calls a remote MCP-compatible API.
     
-    RemoteTool extends ContexaTool to represent a tool that is implemented
+    RemoteTool extends BaseTool to represent a tool that is implemented
     as a remote MCP-compatible API endpoint. This allows agents to use tools
     that are hosted in external services while maintaining the same interface
     as local tools.

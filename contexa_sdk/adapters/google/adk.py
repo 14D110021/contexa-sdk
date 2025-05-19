@@ -186,11 +186,31 @@ async def adapt_agent(agent: ContexaAgent) -> Any:
     """Convert a Contexa agent to a Google ADK agent."""
     return adk_manager.contexa_to_adk(agent)
 
+# Synchronous wrapper for adapt_agent
+def sync_adapt_agent(agent: ContexaAgent) -> Any:
+    """Synchronous wrapper for adapt_agent."""
+    try:
+        import asyncio
+        return asyncio.run(adapt_agent(agent))
+    except Exception as e:
+        logger.error(f"Error adapting agent: {str(e)}")
+        raise e
+
 async def adapt_adk_agent(adk_agent_id: str) -> ContexaAgent:
     """Convert a Google ADK agent to a Contexa agent."""
     # Fetch the ADK agent
     adk_agent = adk_manager.client.get_agent(name=adk_agent_id)
     return adk_manager.adk_to_contexa(adk_agent)
+
+# Synchronous wrapper for adapt_adk_agent
+def sync_adapt_adk_agent(adk_agent_id: str) -> ContexaAgent:
+    """Synchronous wrapper for adapt_adk_agent."""
+    try:
+        import asyncio
+        return asyncio.run(adapt_adk_agent(adk_agent_id))
+    except Exception as e:
+        logger.error(f"Error adapting ADK agent: {str(e)}")
+        raise e
 
 async def handoff(source_agent: ContexaAgent, target_adk_agent: Any, 
                 query: str, context: Dict[str, Any] = None) -> str:
@@ -203,6 +223,36 @@ async def handoff(source_agent: ContexaAgent, target_adk_agent: Any,
     )
     return await adk_manager.handoff_to_adk(handoff_data, target_adk_agent)
 
+# Synchronous wrapper for handoff
+def sync_handoff(source_agent: ContexaAgent, target_adk_agent: Any, 
+               query: str, context: Dict[str, Any] = None) -> str:
+    """Synchronous wrapper for handoff."""
+    try:
+        import asyncio
+        return asyncio.run(handoff(
+            source_agent=source_agent,
+            target_adk_agent=target_adk_agent,
+            query=query,
+            context=context
+        ))
+    except Exception as e:
+        logger.error(f"Error in handoff: {str(e)}")
+        raise e
+
 async def run(adk_agent: Any, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
     """Run a Google ADK agent with the given query."""
-    return await adk_manager.run_adk_agent(adk_agent, query, context) 
+    return await adk_manager.run_adk_agent(adk_agent, query, context)
+
+# Synchronous wrapper for run
+def sync_run(adk_agent: Any, query: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Synchronous wrapper for run."""
+    try:
+        import asyncio
+        return asyncio.run(run(
+            adk_agent=adk_agent,
+            query=query,
+            context=context
+        ))
+    except Exception as e:
+        logger.error(f"Error running agent: {str(e)}")
+        raise e 

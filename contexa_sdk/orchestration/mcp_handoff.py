@@ -50,6 +50,7 @@ import uuid
 import time
 import json
 import asyncio
+from enum import Enum
 from typing import Dict, List, Any, Optional, Union, Callable, AsyncIterator, Type
 from pydantic import BaseModel, Field, create_model, ValidationError
 

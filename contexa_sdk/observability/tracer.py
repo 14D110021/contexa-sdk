@@ -3,8 +3,157 @@
 import time
 import uuid
 import asyncio
-from typing import Dict, Any, List, Optional, Union, Callable
+from typing import Dict, Any, List, Optional, Union, Callable, Awaitable
 from contextlib import contextmanager
+from enum import Enum, auto
+from functools import wraps
+
+
+class SpanKind(str, Enum):
+    """Kinds of spans."""
+    INTERNAL = "internal"
+    SERVER = "server"
+    CLIENT = "client"
+    PRODUCER = "producer"
+    CONSUMER = "consumer"
+    AGENT = "agent"
+    TOOL = "tool"
+    HANDOFF = "handoff"
+    MODEL = "model"
+
+
+class SpanStatus(str, Enum):
+    """Status codes for spans."""
+    OK = "ok"
+    ERROR = "error"
+    UNSET = "unset"
+
+
+def trace(name: Optional[str] = None, kind: SpanKind = SpanKind.INTERNAL):
+    """Decorator for tracing function execution.
+    
+    Args:
+        name: Optional name for the span (uses function name if not provided)
+        kind: Kind of span to create
+        
+    Returns:
+        Decorated function
+    """
+    def decorator(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            # Get the global tracer
+            tracer = _get_global_tracer()
+            if not tracer:
+                return await func(*args, **kwargs)
+                
+            # Create span name from function name if not provided
+            span_name = name or func.__name__
+            
+            # Create span context
+            with tracer.span(span_name, kind=kind) as span:
+                # Add function arguments as span attributes
+                try:
+                    # Add the first argument as 'self' if it's a method
+                    if args and hasattr(args[0], '__class__'):
+                        span.set_attribute('class', args[0].__class__.__name__)
+                    
+                    # Add other attributes
+                    for i, arg in enumerate(args[1:], 1):
+                        if isinstance(arg, (str, int, float, bool)):
+                            span.set_attribute(f'arg{i}', str(arg))
+                    
+                    for k, v in kwargs.items():
+                        if isinstance(v, (str, int, float, bool)):
+                            span.set_attribute(k, str(v))
+                except Exception:
+                    # Ignore errors in attribute setting
+                    pass
+                
+                try:
+                    # Execute the function
+                    result = await func(*args, **kwargs)
+                    
+                    # Record successful execution
+                    span.set_status("ok")
+                    return result
+                except Exception as e:
+                    # Record error
+                    span.set_status("error", str(e))
+                    span.add_event("exception", {"message": str(e)})
+                    raise
+                
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            # Get the global tracer
+            tracer = _get_global_tracer()
+            if not tracer:
+                return func(*args, **kwargs)
+                
+            # Create span name from function name if not provided
+            span_name = name or func.__name__
+            
+            # Create span context
+            with tracer.span(span_name, kind=kind) as span:
+                # Add function arguments as span attributes
+                try:
+                    # Add the first argument as 'self' if it's a method
+                    if args and hasattr(args[0], '__class__'):
+                        span.set_attribute('class', args[0].__class__.__name__)
+                    
+                    # Add other attributes
+                    for i, arg in enumerate(args[1:], 1):
+                        if isinstance(arg, (str, int, float, bool)):
+                            span.set_attribute(f'arg{i}', str(arg))
+                    
+                    for k, v in kwargs.items():
+                        if isinstance(v, (str, int, float, bool)):
+                            span.set_attribute(k, str(v))
+                except Exception:
+                    # Ignore errors in attribute setting
+                    pass
+                
+                try:
+                    # Execute the function
+                    result = func(*args, **kwargs)
+                    
+                    # Record successful execution
+                    span.set_status("ok")
+                    return result
+                except Exception as e:
+                    # Record error
+                    span.set_status("error", str(e))
+                    span.add_event("exception", {"message": str(e)})
+                    raise
+        
+        # Determine if function is async or sync
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+            
+    return decorator
+
+
+# Global tracer instance
+_GLOBAL_TRACER = None
+
+
+def _get_global_tracer():
+    """Get the global tracer instance."""
+    global _GLOBAL_TRACER
+    if _GLOBAL_TRACER is None:
+        _GLOBAL_TRACER = Tracer()
+    return _GLOBAL_TRACER
+
+
+def get_tracer() -> 'Tracer':
+    """Get the global tracer instance.
+    
+    Returns:
+        The global tracer instance
+    """
+    return _get_global_tracer()
 
 
 class SpanContext:

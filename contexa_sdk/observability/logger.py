@@ -1,197 +1,30 @@
-"""Logging module for Contexa SDK."""
+"""Logging utilities for Contexa SDK."""
 
-import os
-import sys
-import json
 import logging
-import threading
-from typing import Any, Dict, Optional, Union
-
-# Configure the default logger
-_default_log_level = os.environ.get("CONTEXA_LOG_LEVEL", "INFO").upper()
-_loggers = {}
-_logger_lock = threading.RLock()
+import sys
+import os
+import json
+from typing import Dict, Any, Optional, Union
 
 
-class ContextaLogger(logging.Logger):
-    """Logger for Contexa SDK with structured logging support."""
-    
-    def __init__(self, name: str, level: int = logging.NOTSET):
-        """Initialize the logger.
-        
-        Args:
-            name: Name of the logger
-            level: Log level
-        """
-        super().__init__(name, level)
-    
-    def _log_with_context(self, level: int, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log with context information.
-        
-        Args:
-            level: Log level
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        if self.isEnabledFor(level):
-            # Add context to extra
-            kwargs.setdefault("extra", {}).update({"context": context})
-            self._log(level, msg, args, **kwargs)
-    
-    def debug_with_context(self, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log debug message with context.
-        
-        Args:
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        self._log_with_context(logging.DEBUG, msg, context, *args, **kwargs)
-    
-    def info_with_context(self, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log info message with context.
-        
-        Args:
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        self._log_with_context(logging.INFO, msg, context, *args, **kwargs)
-    
-    def warning_with_context(self, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log warning message with context.
-        
-        Args:
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        self._log_with_context(logging.WARNING, msg, context, *args, **kwargs)
-    
-    def error_with_context(self, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log error message with context.
-        
-        Args:
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        self._log_with_context(logging.ERROR, msg, context, *args, **kwargs)
-    
-    def critical_with_context(self, msg: str, context: Dict[str, Any], *args, **kwargs):
-        """Log critical message with context.
-        
-        Args:
-            msg: Log message
-            context: Context information to include in the log
-            *args: Additional arguments
-            **kwargs: Additional keyword arguments
-        """
-        self._log_with_context(logging.CRITICAL, msg, context, *args, **kwargs)
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 
-class JSONFormatter(logging.Formatter):
-    """JSON formatter for structured logging."""
-    
-    def format(self, record: logging.LogRecord) -> str:
-        """Format the log record as JSON.
-        
-        Args:
-            record: Log record to format
-            
-        Returns:
-            JSON string
-        """
-        # Extract standard fields
-        log_data = {
-            "timestamp": self.formatTime(record, self.datefmt),
-            "level": record.levelname,
-            "name": record.name,
-            "message": record.getMessage(),
-        }
-        
-        # Add location data
-        log_data.update({
-            "filename": record.filename,
-            "lineno": record.lineno,
-            "funcName": record.funcName,
-        })
-        
-        # Add trace and span IDs if available
-        if hasattr(record, "trace_id"):
-            log_data["trace_id"] = record.trace_id
-        if hasattr(record, "span_id"):
-            log_data["span_id"] = record.span_id
-        
-        # Add context if available
-        if hasattr(record, "context") and record.context:
-            log_data["context"] = record.context
-        
-        # Add exception info if available
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-        
-        return json.dumps(log_data)
-
-
-def _create_console_handler() -> logging.Handler:
-    """Create a console handler for logging.
-    
-    Returns:
-        A configured console handler
-    """
-    # Create console handler and set level
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
-    
-    # Create formatter based on environment
-    if os.environ.get("CONTEXA_LOG_FORMAT", "").upper() == "JSON":
-        formatter = JSONFormatter()
-    else:
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-    
-    console_handler.setFormatter(formatter)
-    return console_handler
-
-
-def get_logger(name: str) -> ContextaLogger:
+def get_logger(name: str) -> logging.Logger:
     """Get a logger with the given name.
     
     Args:
-        name: Name for the logger
+        name: Name of the logger
         
     Returns:
-        A configured logger
+        Configured logger
     """
-    with _logger_lock:
-        if name in _loggers:
-            return _loggers[name]
-        
-        # Create logger
-        logging.setLoggerClass(ContextaLogger)
-        logger = logging.getLogger(name)
-        
-        # Set level
-        try:
-            level = getattr(logging, _default_log_level)
-        except AttributeError:
-            level = logging.INFO
-        logger.setLevel(level)
-        
-        # Add a console handler for output
-        logger.addHandler(_create_console_handler())
-        
-        # Store and return the logger
-        _loggers[name] = logger
-        return logger
+    return logging.getLogger(name)
 
 
 def set_log_level(level: Union[str, int]) -> None:
@@ -200,8 +33,6 @@ def set_log_level(level: Union[str, int]) -> None:
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
     """
-    global _default_log_level
-    
     # Convert string level to int if needed
     if isinstance(level, str):
         level = level.upper()
@@ -210,14 +41,123 @@ def set_log_level(level: Union[str, int]) -> None:
             raise ValueError(f"Invalid log level: {level}")
         level = numeric_level
     
-    # Update default level
-    _default_log_level = level
+    # Update root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
     
-    # Update all existing loggers
-    with _logger_lock:
-        for logger in _loggers.values():
-            logger.setLevel(level)
+    # Update handlers as well
+    for handler in root_logger.handlers:
+        handler.setLevel(level)
+
+
+def configure_logging(
+    level: Union[int, str] = logging.INFO,
+    output_format: str = "text",
+    log_file: Optional[str] = None,
+    structured: bool = False
+) -> None:
+    """Configure global logging settings.
+    
+    Args:
+        level: Log level
+        output_format: Output format ('text' or 'json')
+        log_file: Optional file to write logs to
+        structured: Whether to use structured logging
+    """
+    # Convert string level to constant if needed
+    if isinstance(level, str):
+        level = getattr(logging, level.upper())
+    
+    # Set up root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    
+    # Remove existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Create console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+    
+    # Configure formatter
+    if output_format.lower() == "json" or structured:
+        formatter = JsonFormatter()
+    else:
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+    
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    # Add file handler if specified
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+
+class JsonFormatter(logging.Formatter):
+    """Formatter that outputs log records as JSON."""
+    
+    def format(self, record: logging.LogRecord) -> str:
+        """Format the record as JSON.
+        
+        Args:
+            record: Log record to format
             
-            # Update handlers as well
-            for handler in logger.handlers:
-                handler.setLevel(level) 
+        Returns:
+            JSON string representation of the log record
+        """
+        log_data = {
+            "timestamp": self.formatTime(record, datefmt="%Y-%m-%dT%H:%M:%S.%fZ"),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        }
+        
+        # Add exception info if present
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        
+        # Add extra attributes
+        for key, value in record.__dict__.items():
+            if key not in {
+                "args", "asctime", "created", "exc_info", "exc_text", "filename",
+                "funcName", "id", "levelname", "levelno", "lineno", "module",
+                "msecs", "message", "msg", "name", "pathname", "process",
+                "processName", "relativeCreated", "stack_info", "thread", "threadName"
+            }:
+                log_data[key] = value
+        
+        return json.dumps(log_data)
+
+
+def log_event(
+    event: str,
+    level: Union[int, str] = logging.INFO,
+    data: Optional[Dict[str, Any]] = None
+) -> None:
+    """Log a structured event.
+    
+    Args:
+        event: Event name
+        level: Log level
+        data: Additional event data
+    """
+    # Convert string level to constant if needed
+    if isinstance(level, str):
+        level = getattr(logging, level.upper())
+    
+    logger = get_logger("contexa.events")
+    
+    # Create structured log record
+    extra = {"event": event}
+    if data:
+        extra.update(data)
+    
+    # Log the event
+    logger.log(level, event, extra=extra) 

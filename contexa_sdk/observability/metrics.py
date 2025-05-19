@@ -45,6 +45,267 @@ class Metric:
         self.description = description
 
 
+class Counter:
+    """A metric that accumulates values."""
+    
+    def __init__(self, name: str, description: str = "", tags: Optional[Dict[str, str]] = None):
+        """Initialize a counter.
+        
+        Args:
+            name: Name of the counter
+            description: Description of the counter
+            tags: Tags/labels for the counter
+        """
+        self.name = name
+        self.description = description
+        self.tags = tags or {}
+        self.value = 0
+    
+    def inc(self, value: Union[int, float] = 1, tags: Optional[Dict[str, str]] = None) -> None:
+        """Increment the counter.
+        
+        Args:
+            value: Value to increment by
+            tags: Additional tags for this increment
+        """
+        self.value += value
+        
+        # Record in global metrics collector if available
+        try:
+            metrics_collector = _get_metrics_collector()
+            if metrics_collector:
+                combined_tags = {**self.tags, **(tags or {})}
+                metrics_collector.record_counter(self.name, value, combined_tags)
+        except Exception:
+            # Ignore errors in metrics collection
+            pass
+
+
+class Gauge:
+    """A metric that represents a single numerical value."""
+    
+    def __init__(self, name: str, description: str = "", tags: Optional[Dict[str, str]] = None):
+        """Initialize a gauge.
+        
+        Args:
+            name: Name of the gauge
+            description: Description of the gauge
+            tags: Tags/labels for the gauge
+        """
+        self.name = name
+        self.description = description
+        self.tags = tags or {}
+        self.value = 0
+    
+    def set(self, value: Union[int, float], tags: Optional[Dict[str, str]] = None) -> None:
+        """Set the gauge value.
+        
+        Args:
+            value: Value to set
+            tags: Additional tags for this value
+        """
+        self.value = value
+        
+        # Record in global metrics collector if available
+        try:
+            metrics_collector = _get_metrics_collector()
+            if metrics_collector:
+                combined_tags = {**self.tags, **(tags or {})}
+                metrics_collector.record_gauge(self.name, value, combined_tags)
+        except Exception:
+            # Ignore errors in metrics collection
+            pass
+    
+    def inc(self, value: Union[int, float] = 1, tags: Optional[Dict[str, str]] = None) -> None:
+        """Increment the gauge value.
+        
+        Args:
+            value: Value to increment by
+            tags: Additional tags for this increment
+        """
+        self.value += value
+        
+        # Record in global metrics collector if available
+        try:
+            metrics_collector = _get_metrics_collector()
+            if metrics_collector:
+                combined_tags = {**self.tags, **(tags or {})}
+                metrics_collector.record_gauge(self.name, self.value, combined_tags)
+        except Exception:
+            # Ignore errors in metrics collection
+            pass
+    
+    def dec(self, value: Union[int, float] = 1, tags: Optional[Dict[str, str]] = None) -> None:
+        """Decrement the gauge value.
+        
+        Args:
+            value: Value to decrement by
+            tags: Additional tags for this decrement
+        """
+        self.value -= value
+        
+        # Record in global metrics collector if available
+        try:
+            metrics_collector = _get_metrics_collector()
+            if metrics_collector:
+                combined_tags = {**self.tags, **(tags or {})}
+                metrics_collector.record_gauge(self.name, self.value, combined_tags)
+        except Exception:
+            # Ignore errors in metrics collection
+            pass
+
+
+class Histogram:
+    """A metric that samples observations and counts them in buckets."""
+    
+    def __init__(self, name: str, description: str = "", tags: Optional[Dict[str, str]] = None):
+        """Initialize a histogram.
+        
+        Args:
+            name: Name of the histogram
+            description: Description of the histogram
+            tags: Tags/labels for the histogram
+        """
+        self.name = name
+        self.description = description
+        self.tags = tags or {}
+        self.values: List[float] = []
+    
+    def observe(self, value: Union[int, float], tags: Optional[Dict[str, str]] = None) -> None:
+        """Record a value in the histogram.
+        
+        Args:
+            value: Value to record
+            tags: Additional tags for this observation
+        """
+        self.values.append(float(value))
+        
+        # Record in global metrics collector if available
+        try:
+            metrics_collector = _get_metrics_collector()
+            if metrics_collector:
+                combined_tags = {**self.tags, **(tags or {})}
+                metrics_collector.record_histogram(self.name, value, combined_tags)
+        except Exception:
+            # Ignore errors in metrics collection
+            pass
+
+
+class Timer:
+    """A utility for measuring execution time."""
+    
+    def __init__(self, name: str, description: str = "", tags: Optional[Dict[str, str]] = None):
+        """Initialize a timer.
+        
+        Args:
+            name: Name of the timer
+            description: Description of the timer
+            tags: Tags/labels for the timer
+        """
+        self.name = name
+        self.description = description
+        self.tags = tags or {}
+        self.histogram = Histogram(name, description, tags)
+        self.start_time = None
+    
+    def start(self) -> None:
+        """Start the timer."""
+        self.start_time = time.time()
+    
+    def stop(self, tags: Optional[Dict[str, str]] = None) -> float:
+        """Stop the timer and record the elapsed time.
+        
+        Args:
+            tags: Additional tags for this observation
+            
+        Returns:
+            Elapsed time in milliseconds
+        """
+        if self.start_time is None:
+            return 0.0
+            
+        elapsed_time = (time.time() - self.start_time) * 1000.0  # ms
+        self.histogram.observe(elapsed_time, tags)
+        self.start_time = None
+        return elapsed_time
+    
+    @contextmanager
+    def time(self, tags: Optional[Dict[str, str]] = None):
+        """Context manager for timing a block of code.
+        
+        Args:
+            tags: Additional tags for this observation
+            
+        Yields:
+            None
+        """
+        self.start()
+        try:
+            yield
+        finally:
+            self.stop(tags)
+
+
+# Global metric counters and gauges for common uses
+agent_requests = Counter("agent.requests.total", "Total number of agent requests")
+agent_latency = Histogram("agent.latency.ms", "Agent response latency in milliseconds")
+model_tokens = Counter("model.tokens.total", "Total number of tokens used by models")
+tool_calls = Counter("tool.calls.total", "Total number of tool calls made")
+tool_latency = Histogram("tool.latency.ms", "Tool execution latency in milliseconds")
+handoffs = Counter("agent.handoffs.total", "Total number of agent handoffs")
+active_agents = Gauge("agent.active", "Number of active agents")
+
+
+# Global metrics collector
+_METRICS_COLLECTOR = None
+
+
+def _get_metrics_collector():
+    """Get the global metrics collector."""
+    global _METRICS_COLLECTOR
+    if _METRICS_COLLECTOR is None:
+        try:
+            _METRICS_COLLECTOR = MetricsCollector()
+        except Exception:
+            # If MetricsCollector can't be instantiated, return None
+            pass
+    return _METRICS_COLLECTOR
+
+
+def record_metric(
+    name: str,
+    value: Union[int, float],
+    metric_type: Union[str, MetricType] = MetricType.COUNTER,
+    tags: Optional[Dict[str, str]] = None
+) -> None:
+    """Record a metric using the global metrics collector.
+    
+    Args:
+        name: Name of the metric
+        value: Value of the metric
+        metric_type: Type of the metric
+        tags: Optional tags/dimensions
+    """
+    collector = _get_metrics_collector()
+    if not collector:
+        return
+        
+    # Convert string metric type to enum if needed
+    if isinstance(metric_type, str):
+        metric_type = MetricType(metric_type.lower())
+        
+    # Record the metric with the appropriate method
+    if metric_type == MetricType.COUNTER:
+        collector.record_counter(name, value, tags)
+    elif metric_type == MetricType.GAUGE:
+        collector.record_gauge(name, value, tags)
+    elif metric_type == MetricType.HISTOGRAM:
+        collector.record_histogram(name, value, tags)
+    elif metric_type == MetricType.SUMMARY:
+        # For now, record summaries as histograms
+        collector.record_histogram(name, value, tags)
+
+
 class MetricExporter:
     """Base class for metric exporters.
     

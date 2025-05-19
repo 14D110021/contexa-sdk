@@ -63,6 +63,15 @@ async def convert_tool_to_google(tool: Union[BaseTool, RemoteTool]) -> Dict[str,
     
     return decorated_tool
 
+# Synchronous wrapper for convert_tool_to_google
+def convert_tool(tool: Union[BaseTool, RemoteTool]) -> Dict[str, Any]:
+    """Synchronous wrapper for convert_tool_to_google."""
+    try:
+        return asyncio.run(convert_tool_to_google(tool))
+    except Exception as e:
+        logger.error(f"Error converting tool: {str(e)}")
+        raise e
+
 async def convert_model_to_google(model: ContexaModel) -> Any:
     """Convert a Contexa model to Google ADK format.
     
@@ -118,6 +127,15 @@ async def convert_model_to_google(model: ContexaModel) -> Any:
     
     return model_config
 
+# Synchronous wrapper for convert_model_to_google
+def convert_model(model: ContexaModel) -> Any:
+    """Synchronous wrapper for convert_model_to_google."""
+    try:
+        return asyncio.run(convert_model_to_google(model))
+    except Exception as e:
+        logger.error(f"Error converting model: {str(e)}")
+        raise e
+
 async def convert_agent_to_google(agent: ContexaAgent) -> Any:
     """Convert a Contexa agent to Google ADK agent.
     
@@ -166,6 +184,15 @@ async def convert_agent_to_google(agent: ContexaAgent) -> Any:
     setattr(adk_agent, "_contexa_agent", agent)
     
     return adk_agent
+
+# Synchronous wrapper for convert_agent_to_google
+def convert_agent(agent: ContexaAgent) -> Any:
+    """Synchronous wrapper for convert_agent_to_google."""
+    try:
+        return asyncio.run(convert_agent_to_google(agent))
+    except Exception as e:
+        logger.error(f"Error converting agent: {str(e)}")
+        raise e
 
 async def adapt_google_agent(adk_agent: Any) -> ContexaAgent:
     """Adapt a Google ADK agent back to a Contexa agent.
@@ -222,6 +249,15 @@ async def adapt_google_agent(adk_agent: Any) -> ContexaAgent:
     )
     
     return contexa_agent
+
+# Synchronous wrapper for adapt_google_agent
+def adapt_agent(adk_agent: Any) -> ContexaAgent:
+    """Synchronous wrapper for adapt_google_agent."""
+    try:
+        return asyncio.run(adapt_google_agent(adk_agent))
+    except Exception as e:
+        logger.error(f"Error adapting agent: {str(e)}")
+        raise e
 
 async def handoff_to_google_agent(
     source_agent: ContexaAgent,
@@ -289,8 +325,23 @@ async def handoff_to_google_agent(
         
     return response
 
-# Alias for backward compatibility
-convert_tool = convert_tool_to_google
-convert_model = convert_model_to_google
-convert_agent = convert_agent_to_google
-adapt_agent = adapt_google_agent 
+# Synchronous wrapper for handoff_to_google_agent
+def handoff(
+    source_agent: ContexaAgent,
+    target_adk_agent: Any,
+    query: str,
+    context: Optional[Dict[str, Any]] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Synchronous wrapper for handoff_to_google_agent."""
+    try:
+        return asyncio.run(handoff_to_google_agent(
+            source_agent=source_agent,
+            target_adk_agent=target_adk_agent,
+            query=query,
+            context=context,
+            metadata=metadata
+        ))
+    except Exception as e:
+        logger.error(f"Error in handoff: {str(e)}")
+        raise e 
