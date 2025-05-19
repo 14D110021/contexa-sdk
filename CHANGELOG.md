@@ -14,12 +14,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Cross-framework handoff tests
 - Resource tracking tests
 - Health monitoring tests
+- Dedicated documentation for Google adapters
+- Examples demonstrating both Google GenAI and ADK usage
+- Tests for cross-framework compatibility with Google adapters
 
 ### Changed
 - Standardized model handling across all adapters
 - Improved error handling in all adapters
 - Made CrewAI crew creation optional
 - Updated OpenAI package references to use correct imports
+- **Restructured Google adapters**: Properly separated Google GenAI and Google ADK implementations with clear namespacing
+- Enhanced Google adapter interfaces with better error handling and synchronous wrappers
+- Improved setup.py with explicit separate dependencies for Google GenAI and ADK
 
 ### Fixed
 - Google adapter import statements

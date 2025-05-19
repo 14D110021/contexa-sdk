@@ -148,4 +148,83 @@ We maintain a comprehensive test suite in `tests/adapters/test_compatibility.py`
 
 ## Requesting New Framework Support
 
-If you'd like to see support for additional agentic frameworks, please [open an issue](https://github.com/your-repo/contexa-sdk/issues/new) with the framework name, key features, and your use case. We prioritize framework integrations based on community interest and framework maturity. 
+If you'd like to see support for additional agentic frameworks, please [open an issue](https://github.com/your-repo/contexa-sdk/issues/new) with the framework name, key features, and your use case. We prioritize framework integrations based on community interest and framework maturity.
+
+# Contexa SDK - Framework Compatibility Matrix
+
+This document outlines the version compatibility between Contexa SDK and the various AI frameworks it supports.
+
+## Version Compatibility
+
+| Framework | Minimum Supported Version | Recommended Version | Notes |
+|-----------|---------------------------|---------------------|-------|
+| LangChain | 0.1.0 | 0.1.5+ | Requires langchain-openai for OpenAI integration |
+| CrewAI | 0.110.0 | 0.112.0+ | Earlier versions may have agent registration issues |
+| OpenAI SDK | 1.2.0 | 1.5.0+ | Required for function calling |
+| OpenAI Agents SDK | 0.0.3 | 0.0.5+ | Still in preview/beta |
+| Google GenAI | 0.3.0 | 0.3.1+ | For Gemini model access |
+| Google ADK | 0.5.0 | 0.5.0+ | Agent Development Kit (newer product) |
+
+## Feature Support Matrix
+
+| Feature | LangChain | CrewAI | OpenAI | Google GenAI | Google ADK |
+|---------|-----------|--------|--------|-------------|------------|
+| Tool Conversions | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Model Conversions | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Agent Conversions | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Handoffs (outgoing) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Handoffs (incoming) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Streaming | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Multi-agent | ✅ | ✅ | ❌ | ❌ | ✅ |
+| MCP Support | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## Google Adapter Comparison
+
+### Google GenAI vs. Google ADK
+
+| Aspect | Google GenAI | Google ADK |
+|--------|-------------|------------|
+| Primary Use Case | Simple integration with Gemini models | Advanced agent capabilities and orchestration |
+| Complexity | Lower | Higher |
+| Required Package | google-generativeai | google-adk |
+| Model Support | Gemini models | Multiple models with ADK wrapper |
+| Function Calling | Basic | Advanced |
+| Multi-agent Support | Limited | Extensive |
+| Integration Ease | Easier, fewer components | More complex, more features |
+| Development Status | Stable | Newer/evolving |
+
+## Installation Requirements
+
+For each framework, install the corresponding extras:
+
+```bash
+# LangChain support
+pip install "contexa-sdk[langchain]"
+
+# CrewAI support
+pip install "contexa-sdk[crewai]"
+
+# OpenAI support 
+pip install "contexa-sdk[openai]"
+
+# Google GenAI support (for Gemini models)
+pip install "contexa-sdk[google-genai]"
+
+# Google ADK support (for Agent Development Kit)
+pip install "contexa-sdk[google-adk]"
+
+# Support for both Google adapters
+pip install "contexa-sdk[google]"
+
+# All frameworks
+pip install "contexa-sdk[all]"
+```
+
+## Recommendations
+
+- **For new projects**: Start with LangChain for flexibility or OpenAI for simplicity
+- **For Google developers**: 
+  - Use GenAI adapter for simple Gemini model access
+  - Use ADK adapter for complex agent development with Google's framework
+- **For multi-agent systems**: CrewAI and Google ADK provide the most robust support
+- **For performance**: OpenAI and Google GenAI adapters offer the fastest execution 

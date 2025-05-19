@@ -80,6 +80,10 @@ pip install contexa-sdk[google-adk]   # For Google Agent Development Kit support
 pip install contexa-sdk[google]       # For both Google adapters
 pip install contexa-sdk[viz]          # For agent visualization support
 
+# Google adapters have different use cases:
+# - google-genai: For Gemini models via Google's GenAI SDK (simpler, more streamlined)
+# - google-adk: For more complex agent capabilities via Google's Agent Development Kit
+
 # Install with all framework support
 pip install contexa-sdk[all]
 ```
@@ -136,12 +140,12 @@ from contexa_sdk.adapters import openai
 oa_agent = openai.agent(agent)
 result = await oa_agent.execute("What's new in AI?")
 
-# Google GenAI
+# Google GenAI (for simple Gemini model integration)
 from contexa_sdk.adapters.google import genai_agent
 genai_assistant = genai_agent(agent)
 result = await genai_assistant.run("What's new in AI?")
 
-# Google ADK
+# Google ADK (for advanced agent capabilities)
 from contexa_sdk.adapters.google import adk_agent
 adk_assistant = adk_agent(agent)
 result = await adk_assistant.run("What's new in AI?")
