@@ -12,40 +12,32 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union, Awaitable
 
 from contexa_sdk.runtime.resource_tracking import ResourceLimits, ResourceUsage
 
 
-class HealthStatus(Enum):
-    """Health status of an agent or runtime."""
-    HEALTHY = auto()      # System is functioning normally
-    DEGRADED = auto()     # System is functioning but with reduced performance
-    UNHEALTHY = auto()    # System is experiencing issues but may recover
-    CRITICAL = auto()     # System is in a critical state and requires intervention
-    UNKNOWN = auto()      # System status cannot be determined
+class HealthStatus(str, Enum):
+    """Health status values."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    FAILING = "failing"
+    UNKNOWN = "unknown"
 
 
 @dataclass
 class HealthCheckResult:
     """Result of a health check."""
-    # Overall health status
     status: HealthStatus
+    message: str = ""
+    details: Dict[str, Any] = None
+    timestamp: float = None
     
-    # Detailed message about the health status
-    message: str
-    
-    # Timestamp when the check was performed
-    timestamp: float = field(default_factory=time.time)
-    
-    # Detailed metrics and information
-    details: Dict[str, Any] = field(default_factory=dict)
-    
-    # Whether auto-recovery was attempted
-    recovery_attempted: bool = False
-    
-    # Whether auto-recovery was successful
-    recovery_successful: Optional[bool] = None
+    def __post_init__(self):
+        if self.details is None:
+            self.details = {}
+        if self.timestamp is None:
+            self.timestamp = time.time()
 
 
 class HealthCheck(abc.ABC):

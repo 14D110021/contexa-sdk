@@ -1,363 +1,254 @@
-"""Resource tracking for agent runtime environments.
+"""Resource tracking module for monitoring and limiting agent resource usage."""
 
-This module provides interfaces and implementations for tracking and
-limiting agent resource usage, such as memory, CPU, and request rate.
-"""
-
-import asyncio
-import dataclasses
-import logging
-import os
-import platform
-import threading
-import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Dict, Any, List, Optional, Union
+from dataclasses import dataclass
 
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
+
+class ResourceType(str, Enum):
+    """Types of resources that can be tracked."""
+    MEMORY = "memory"
+    CPU = "cpu"
+    TOKENS = "tokens"
+    REQUESTS = "requests"
+    STORAGE = "storage"
+    BANDWIDTH = "bandwidth"
+    CUSTOM = "custom"
+
+
+@dataclass
+class ResourceUsage:
+    """Resource usage data."""
+    memory_mb: float = 0.0
+    cpu_percent: float = 0.0
+    tokens_used: int = 0
+    tokens_used_last_minute: int = 0
+    requests_per_minute: int = 0
+    bandwidth_kb: float = 0.0
+    custom_metrics: Dict[str, Any] = None
+    
+    def __post_init__(self):
+        if self.custom_metrics is None:
+            self.custom_metrics = {}
 
 
 @dataclass
 class ResourceLimits:
     """Resource limits for an agent."""
-    # Maximum memory usage in MB
-    max_memory_mb: float = float('inf')
-    
-    # Maximum CPU usage as a percentage (0-100)
-    max_cpu_percent: float = float('inf')
-    
-    # Maximum requests per minute
-    max_requests_per_minute: float = float('inf')
-    
-    # Maximum tokens per minute (for LLM-based agents)
+    max_memory_mb: Optional[float] = None
+    max_cpu_percent: Optional[float] = None
+    max_tokens: Optional[int] = None
     max_tokens_per_minute: Optional[int] = None
+    max_requests_per_minute: Optional[int] = None
+    max_bandwidth_kb: Optional[float] = None
+    custom_limits: Dict[str, Any] = None
     
-    # Maximum concurrent requests
-    max_concurrent_requests: Optional[int] = None
-    
-    # Additional limits as key-value pairs
-    additional_limits: Dict[str, Any] = field(default_factory=dict)
+    def __post_init__(self):
+        if self.custom_limits is None:
+            self.custom_limits = {}
 
 
-@dataclass
-class ResourceUsage:
-    """Resource usage information for an agent."""
-    # Agent ID
-    agent_id: str
+class ResourceConstraintViolation(Exception):
+    """Exception raised when a resource constraint is violated."""
     
-    # Current memory usage in MB
-    memory_mb: float = 0.0
-    
-    # Current CPU usage as a percentage (0-100)
-    cpu_percent: float = 0.0
-    
-    # Requests per minute
-    requests_per_minute: float = 0.0
-    
-    # Tokens per minute (for LLM-based agents)
-    tokens_per_minute: Optional[int] = None
-    
-    # Current concurrent requests
-    concurrent_requests: int = 0
-    
-    # Last updated timestamp
-    last_updated: float = field(default_factory=time.time)
-    
-    # Request count within the current minute
-    _request_count: int = 0
-    
-    # Token count within the current minute
-    _token_count: int = 0
-    
-    # Minute window start time
-    _minute_start: float = field(default_factory=time.time)
-    
-    # Additional usage metrics as key-value pairs
-    additional_usage: Dict[str, Any] = field(default_factory=dict)
-    
-    def record_request(self) -> None:
-        """Record a new request."""
-        current_time = time.time()
-        self.concurrent_requests += 1
-        
-        # Reset counters if we've moved to a new minute
-        if current_time - self._minute_start >= 60:
-            # Calculate requests per minute before resetting
-            elapsed_minutes = (current_time - self._minute_start) / 60
-            if elapsed_minutes > 0:
-                self.requests_per_minute = self._request_count / elapsed_minutes
-                if self._token_count > 0:
-                    self.tokens_per_minute = int(self._token_count / elapsed_minutes)
-            
-            # Reset for the new minute window
-            self._request_count = 0
-            self._token_count = 0
-            self._minute_start = current_time
-        
-        self._request_count += 1
-        self.last_updated = current_time
-    
-    def record_request_completed(self) -> None:
-        """Record a request completion."""
-        self.concurrent_requests = max(0, self.concurrent_requests - 1)
-        self.last_updated = time.time()
-    
-    def record_tokens(self, token_count: int) -> None:
-        """Record token usage.
+    def __init__(
+        self, 
+        resource_type: ResourceType, 
+        current_value: Any, 
+        limit_value: Any, 
+        agent_id: Optional[str] = None
+    ):
+        """Initialize a resource constraint violation.
         
         Args:
-            token_count: Number of tokens to record
+            resource_type: The type of resource that exceeded its limit
+            current_value: The current value of the resource
+            limit_value: The limit value that was exceeded
+            agent_id: Optional ID of the agent that exceeded the limit
         """
-        current_time = time.time()
+        self.resource_type = resource_type
+        self.current_value = current_value
+        self.limit_value = limit_value
+        self.agent_id = agent_id
         
-        # Reset counters if we've moved to a new minute
-        if current_time - self._minute_start >= 60:
-            # Calculate tokens per minute before resetting
-            elapsed_minutes = (current_time - self._minute_start) / 60
-            if elapsed_minutes > 0:
-                self.requests_per_minute = self._request_count / elapsed_minutes
-                if self._token_count > 0:
-                    self.tokens_per_minute = int(self._token_count / elapsed_minutes)
+        message = (
+            f"Resource constraint violated: {resource_type.value} "
+            f"({current_value} > {limit_value})"
+        )
+        
+        if agent_id:
+            message += f" for agent {agent_id}"
             
-            # Reset for the new minute window
-            self._request_count = 0
-            self._token_count = 0
-            self._minute_start = current_time
-        
-        self._token_count += token_count
-        self.last_updated = current_time
-    
-    def update_system_metrics(self) -> None:
-        """Update system metrics like memory and CPU usage.
-        
-        This method attempts to use psutil if available. If not,
-        it will leave the values unchanged.
-        """
-        if not PSUTIL_AVAILABLE:
-            return
-        
-        current_process = psutil.Process(os.getpid())
-        
-        # Get memory info in MB
-        memory_info = current_process.memory_info()
-        self.memory_mb = memory_info.rss / (1024 * 1024)
-        
-        # Get CPU usage
-        self.cpu_percent = current_process.cpu_percent(interval=0.1)
-        
-        self.last_updated = time.time()
-    
-    def check_limits(self, limits: ResourceLimits) -> List[str]:
-        """Check if any resource limits are being exceeded.
-        
-        Args:
-            limits: Resource limits to check against
-            
-        Returns:
-            List of violated limit descriptions, empty if no limits exceeded
-        """
-        violations = []
-        
-        if self.memory_mb > limits.max_memory_mb:
-            violations.append(
-                f"Memory usage ({self.memory_mb:.2f} MB) exceeds limit "
-                f"({limits.max_memory_mb:.2f} MB)"
-            )
-        
-        if self.cpu_percent > limits.max_cpu_percent:
-            violations.append(
-                f"CPU usage ({self.cpu_percent:.2f}%) exceeds limit "
-                f"({limits.max_cpu_percent:.2f}%)"
-            )
-        
-        if self.requests_per_minute > limits.max_requests_per_minute:
-            violations.append(
-                f"Request rate ({self.requests_per_minute:.2f} rpm) exceeds limit "
-                f"({limits.max_requests_per_minute:.2f} rpm)"
-            )
-        
-        if (limits.max_tokens_per_minute is not None and 
-                self.tokens_per_minute is not None and 
-                self.tokens_per_minute > limits.max_tokens_per_minute):
-            violations.append(
-                f"Token rate ({self.tokens_per_minute} tpm) exceeds limit "
-                f"({limits.max_tokens_per_minute} tpm)"
-            )
-        
-        if (limits.max_concurrent_requests is not None and 
-                self.concurrent_requests > limits.max_concurrent_requests):
-            violations.append(
-                f"Concurrent requests ({self.concurrent_requests}) exceeds limit "
-                f"({limits.max_concurrent_requests})"
-            )
-        
-        # Check additional limits
-        for key, limit_value in limits.additional_limits.items():
-            if key in self.additional_usage and self.additional_usage[key] > limit_value:
-                violations.append(
-                    f"{key} ({self.additional_usage[key]}) exceeds limit "
-                    f"({limit_value})"
-                )
-        
-        return violations
+        super().__init__(message)
 
 
 class ResourceTracker:
-    """Tracks resource usage for multiple agents.
+    """Tracks and limits resource usage for agents.
     
-    This class provides methods for tracking and enforcing resource limits
-    for agents running in a runtime environment.
+    The ResourceTracker monitors resource usage for agents and enforces
+    resource limits. It can track:
+    - Memory usage
+    - CPU usage
+    - Token usage (for LLM calls)
+    - Request rates
+    - Bandwidth usage
+    - Custom metrics
     """
     
-    def __init__(self, update_interval_seconds: float = 5.0):
-        """Initialize a resource tracker.
-        
-        Args:
-            update_interval_seconds: Interval at which to update system metrics
-        """
-        self._resources: Dict[str, ResourceUsage] = {}
-        self._limits: Dict[str, ResourceLimits] = {}
-        self._lock = threading.RLock()
-        self._update_interval = update_interval_seconds
-        self._last_system_update: Dict[str, float] = {}
-        self._logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self):
+        """Initialize the resource tracker."""
+        self.agent_usage: Dict[str, ResourceUsage] = {}
+        self.agent_limits: Dict[str, ResourceLimits] = {}
     
-    def register_agent(
-        self, 
-        agent_id: str, 
-        limits: Optional[ResourceLimits] = None
-    ) -> None:
+    def register_agent(self, agent_id: str, limits: Optional[ResourceLimits] = None) -> None:
         """Register an agent for resource tracking.
         
         Args:
-            agent_id: Unique identifier for the agent
-            limits: Resource limits for the agent
+            agent_id: The ID of the agent to track
+            limits: Optional resource limits for the agent
         """
-        with self._lock:
-            self._resources[agent_id] = ResourceUsage(agent_id=agent_id)
-            if limits:
-                self._limits[agent_id] = limits
+        self.agent_usage[agent_id] = ResourceUsage()
+        self.agent_limits[agent_id] = limits or ResourceLimits()
     
-    def unregister_agent(self, agent_id: str) -> None:
-        """Unregister an agent from resource tracking.
+    def update_usage(self, agent_id: str, resource_usage: ResourceUsage) -> None:
+        """Update resource usage for an agent.
         
         Args:
-            agent_id: Unique identifier for the agent
+            agent_id: The ID of the agent
+            resource_usage: The updated resource usage
+            
+        Raises:
+            ResourceConstraintViolation: If a resource limit is exceeded
         """
-        with self._lock:
-            if agent_id in self._resources:
-                del self._resources[agent_id]
-            if agent_id in self._limits:
-                del self._limits[agent_id]
-            if agent_id in self._last_system_update:
-                del self._last_system_update[agent_id]
+        if agent_id not in self.agent_usage:
+            self.register_agent(agent_id)
+            
+        self.agent_usage[agent_id] = resource_usage
+        
+        # Check limits
+        limits = self.agent_limits.get(agent_id)
+        if limits:
+            self._check_limits(agent_id, resource_usage, limits)
+    
+    def get_usage(self, agent_id: str) -> ResourceUsage:
+        """Get current resource usage for an agent.
+        
+        Args:
+            agent_id: The ID of the agent
+            
+        Returns:
+            The current resource usage
+            
+        Raises:
+            ValueError: If the agent is not registered
+        """
+        if agent_id not in self.agent_usage:
+            raise ValueError(f"Agent {agent_id} not registered for resource tracking")
+            
+        return self.agent_usage[agent_id]
     
     def set_limits(self, agent_id: str, limits: ResourceLimits) -> None:
         """Set resource limits for an agent.
         
         Args:
-            agent_id: Unique identifier for the agent
-            limits: Resource limits for the agent
+            agent_id: The ID of the agent
+            limits: The resource limits to set
         """
-        with self._lock:
-            self._limits[agent_id] = limits
+        if agent_id not in self.agent_limits:
+            self.register_agent(agent_id, limits)
+        else:
+            self.agent_limits[agent_id] = limits
     
-    def get_limits(self, agent_id: str) -> Optional[ResourceLimits]:
-        """Get resource limits for an agent.
+    def get_limits(self, agent_id: str) -> ResourceLimits:
+        """Get current resource limits for an agent.
         
         Args:
-            agent_id: Unique identifier for the agent
+            agent_id: The ID of the agent
             
         Returns:
-            Resource limits for the agent, or None if no limits are set
-        """
-        with self._lock:
-            return self._limits.get(agent_id)
-    
-    def record_request(self, agent_id: str) -> None:
-        """Record a new request for an agent.
-        
-        Args:
-            agent_id: Unique identifier for the agent
-        """
-        with self._lock:
-            if agent_id in self._resources:
-                self._resources[agent_id].record_request()
-                self._maybe_update_system_metrics(agent_id)
-    
-    def record_request_completed(self, agent_id: str) -> None:
-        """Record a request completion for an agent.
-        
-        Args:
-            agent_id: Unique identifier for the agent
-        """
-        with self._lock:
-            if agent_id in self._resources:
-                self._resources[agent_id].record_request_completed()
-    
-    def record_tokens(self, agent_id: str, token_count: int) -> None:
-        """Record token usage for an agent.
-        
-        Args:
-            agent_id: Unique identifier for the agent
-            token_count: Number of tokens to record
-        """
-        with self._lock:
-            if agent_id in self._resources:
-                self._resources[agent_id].record_tokens(token_count)
-    
-    def get_usage(self, agent_id: str) -> Optional[ResourceUsage]:
-        """Get resource usage for an agent.
-        
-        Args:
-            agent_id: Unique identifier for the agent
+            The current resource limits
             
-        Returns:
-            Resource usage for the agent, or None if the agent is not registered
+        Raises:
+            ValueError: If the agent is not registered
         """
-        with self._lock:
-            if agent_id in self._resources:
-                self._maybe_update_system_metrics(agent_id)
-                return self._resources[agent_id]
-            return None
+        if agent_id not in self.agent_limits:
+            raise ValueError(f"Agent {agent_id} not registered for resource tracking")
+            
+        return self.agent_limits[agent_id]
     
-    def check_limits(self, agent_id: str) -> List[str]:
-        """Check if an agent is exceeding any resource limits.
+    def _check_limits(self, agent_id: str, usage: ResourceUsage, limits: ResourceLimits) -> None:
+        """Check if resource usage exceeds limits.
         
         Args:
-            agent_id: Unique identifier for the agent
+            agent_id: The ID of the agent
+            usage: The current resource usage
+            limits: The resource limits to check
             
-        Returns:
-            List of violated limit descriptions, empty if no limits exceeded
+        Raises:
+            ResourceConstraintViolation: If a resource limit is exceeded
         """
-        with self._lock:
-            if agent_id not in self._resources:
-                return []
+        # Check memory limit
+        if limits.max_memory_mb is not None and usage.memory_mb > limits.max_memory_mb:
+            raise ResourceConstraintViolation(
+                ResourceType.MEMORY,
+                usage.memory_mb,
+                limits.max_memory_mb,
+                agent_id
+            )
             
-            # Update system metrics before checking limits
-            self._maybe_update_system_metrics(agent_id)
+        # Check CPU limit
+        if limits.max_cpu_percent is not None and usage.cpu_percent > limits.max_cpu_percent:
+            raise ResourceConstraintViolation(
+                ResourceType.CPU,
+                usage.cpu_percent,
+                limits.max_cpu_percent,
+                agent_id
+            )
             
-            # Check against agent-specific limits if they exist
-            if agent_id in self._limits:
-                return self._resources[agent_id].check_limits(self._limits[agent_id])
+        # Check token limit
+        if limits.max_tokens is not None and usage.tokens_used > limits.max_tokens:
+            raise ResourceConstraintViolation(
+                ResourceType.TOKENS,
+                usage.tokens_used,
+                limits.max_tokens,
+                agent_id
+            )
             
-            return []
-    
-    def _maybe_update_system_metrics(self, agent_id: str) -> None:
-        """Update system metrics if the update interval has elapsed.
-        
-        Args:
-            agent_id: Unique identifier for the agent
-        """
-        current_time = time.time()
-        last_update = self._last_system_update.get(agent_id, 0)
-        
-        if current_time - last_update >= self._update_interval:
-            self._resources[agent_id].update_system_metrics()
-            self._last_system_update[agent_id] = current_time 
+        # Check token rate limit
+        if (limits.max_tokens_per_minute is not None and 
+                usage.tokens_used_last_minute > limits.max_tokens_per_minute):
+            raise ResourceConstraintViolation(
+                ResourceType.TOKENS,
+                usage.tokens_used_last_minute,
+                limits.max_tokens_per_minute,
+                agent_id
+            )
+            
+        # Check request rate limit
+        if (limits.max_requests_per_minute is not None and 
+                usage.requests_per_minute > limits.max_requests_per_minute):
+            raise ResourceConstraintViolation(
+                ResourceType.REQUESTS,
+                usage.requests_per_minute,
+                limits.max_requests_per_minute,
+                agent_id
+            )
+            
+        # Check bandwidth limit
+        if limits.max_bandwidth_kb is not None and usage.bandwidth_kb > limits.max_bandwidth_kb:
+            raise ResourceConstraintViolation(
+                ResourceType.BANDWIDTH,
+                usage.bandwidth_kb,
+                limits.max_bandwidth_kb,
+                agent_id
+            )
+            
+        # Check custom limits
+        for metric, limit in limits.custom_limits.items():
+            if metric in usage.custom_metrics and usage.custom_metrics[metric] > limit:
+                raise ResourceConstraintViolation(
+                    ResourceType.CUSTOM,
+                    usage.custom_metrics[metric],
+                    limit,
+                    agent_id
+                ) 

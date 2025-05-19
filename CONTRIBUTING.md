@@ -15,76 +15,132 @@ Thank you for your interest in contributing to Contexa SDK! This document provid
 
 ## Code of Conduct
 
-This project adheres to a Code of Conduct that establishes how we collaborate. By participating, you are expected to uphold this code. Please report unacceptable behavior to the project maintainers.
+Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to help us maintain a healthy and inclusive community.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.8 or higher
-- Git
+- pip
+- git
 
-### Setting Up the Development Environment
+### Setup
 
 1. Fork the repository on GitHub
-2. Clone your fork locally:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/contexa_sdk.git
+2. Clone your fork:
+   ```
+   git clone https://github.com/YOUR_USERNAME/contexa_sdk.git
    cd contexa_sdk
    ```
-3. Install the package in development mode with all dependencies:
-   ```bash
-   pip install -e ".[all,dev]"
+3. Install development dependencies:
    ```
-4. Create a branch for your feature or bugfix:
-   ```bash
+   pip install -e ".[dev,test]"
+   ```
+
+## Development Workflow
+
+1. Create a branch for your work:
+   ```
    git checkout -b feature/your-feature-name
    ```
 
-## Development Process
+2. Make your changes, following our coding standards (see below)
 
-1. Check the issues list for open tasks or create a new issue for your proposed feature
-2. Assign the issue to yourself to let others know you're working on it
-3. Implement your changes following our coding standards
-4. Write tests for your changes
-5. Run the test suite to ensure everything passes
-6. Update documentation as needed
-7. Create a pull request with your changes
+3. Add tests for your changes
 
-## Pull Request Process
+4. Run tests to make sure everything passes:
+   ```
+   pytest
+   ```
 
-1. Update the README.md or relevant documentation with details of changes
-2. Run tests to verify your changes don't break existing functionality
-3. Ensure your code follows the project's coding standards
-4. Submit your pull request with a clear description of the changes
-5. Address any feedback from code reviews
-6. Once approved, your PR will be merged by a maintainer
+5. Commit your changes following our commit message guidelines
+
+6. Push your branch and submit a pull request
 
 ## Coding Standards
 
+### Python Style
+
 - Follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guidelines
-- Use type hints for all function parameters and return values
-- Document your code using Google-style docstrings
-- Keep lines under 100 characters
-- Use meaningful variable and function names
-- Write modular, reusable code
-- Follow the project's architecture and design patterns
+- Use [type hints](https://docs.python.org/3/library/typing.html) for all function parameters and return values
+- Document all functions, classes, and modules using [Google style docstrings](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html)
+- Keep lines to a maximum of 88 characters (we use Black formatting)
+- Use meaningful variable names and avoid abbreviations
+- Run `black` and `isort` before committing changes
 
-### Code Formatting
+### Testing
 
-We use the following tools for code formatting and linting:
+- Write unit tests for all new functionality
+- Use pytest fixtures for common test setups
+- Mock external dependencies where appropriate
+- Test both success and failure cases
+- Aim for 90% or higher code coverage for new code
 
-- [Black](https://black.readthedocs.io/) for code formatting
-- [Flake8](https://flake8.pycqa.org/) for linting
-- [isort](https://pycqa.github.io/isort/) for sorting imports
+### Documentation
 
-Run these before submitting a PR:
+- Update documentation for any new features or changes to existing features
+- Keep README.md and framework compatibility docs up to date
+- Include examples for new features
 
-```bash
-black contexa_sdk tests
-flake8 contexa_sdk tests
-isort contexa_sdk tests
-```
+## Framework Adapter Guidelines
+
+When working on framework adapters, follow these guidelines:
+
+1. **Standardized Interface**: All adapters must implement the same core interface methods:
+   - `create_model()` - Create a model compatible with the framework
+   - `create_tool()` - Create a tool compatible with the framework
+   - `create_agent()` - Create an agent using the framework
+
+2. **Error Handling**: All adapters should catch framework-specific errors and raise consistent Contexa SDK errors with helpful messages.
+
+3. **Dependency Management**: Use try/except imports for adapter dependencies to allow the SDK to function without all adapters installed.
+
+4. **Conversion Functions**: Provide helper functions to convert between Contexa SDK types and framework-specific types.
+
+5. **Cross-Framework Compatibility**: Ensure adapters can pass data between frameworks through the Contexa SDK standard formats.
+
+6. **Tests**: Write comprehensive tests that verify both functionality and cross-framework compatibility.
+
+## Pull Request Process
+
+1. Update the CHANGELOG.md with details of your changes
+2. Make sure all tests pass locally
+3. Ensure your code follows our coding standards
+4. Update documentation as needed
+5. Submit the pull request with a clear description of the changes
+6. Address any feedback from code reviews
+
+## Commit Message Guidelines
+
+We follow a simplified version of [Conventional Commits](https://www.conventionalcommits.org/):
+
+- `feat:` - A new feature
+- `fix:` - A bug fix
+- `docs:` - Documentation changes
+- `test:` - Adding or updating tests
+- `refactor:` - Code changes that neither fix bugs nor add features
+- `style:` - Changes that don't affect code function (formatting, whitespace)
+- `chore:` - Other changes that don't modify src or test files
+
+Example: `feat: add support for CrewAI framework`
+
+## Release Process
+
+Contexa SDK follows [Semantic Versioning](https://semver.org/):
+
+- MAJOR version for incompatible API changes
+- MINOR version for backward-compatible functionality
+- PATCH version for backward-compatible bug fixes
+
+The release process is handled by the maintainers and involves:
+1. Updating CHANGELOG.md
+2. Creating a version tag
+3. Building and publishing the package
+
+## License
+
+By contributing to Contexa SDK, you agree that your contributions will be licensed under the project's MIT License.
 
 ## Testing Guidelines
 
