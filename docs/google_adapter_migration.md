@@ -1,73 +1,158 @@
-# Google Adapters Migration Guide
+# Migrating to the New Google Adapters Structure
 
-## Overview
+This guide will help you migrate your code from the old Google adapter structure to the new, improved structure that properly separates Google GenAI and Google ADK implementations.
 
-We've restructured the Google adapters in the Contexa SDK to properly separate Google GenAI (Gemini) and Google ADK (Agent Development Kit) implementations. This document provides guidance on migrating existing code to use the new structure.
+## Overview of Changes
 
-## Changes Made
+The Google adapters have been restructured to:
 
-1. **Directory Restructuring**:
-   - Moved Google GenAI implementation to `contexa_sdk/adapters/google/genai.py`
-   - Moved Google ADK implementation to `contexa_sdk/adapters/google/adk.py`
-   - Added a converter module at `contexa_sdk/adapters/google/converter.py`
+1. Clearly separate Google GenAI (Gemini) and Google ADK implementations
+2. Use explicit prefixed functions for better clarity (`genai_*` and `adk_*`)
+3. Maintain backward compatibility through non-prefixed exports
+4. Improve error handling and provide synchronous wrappers
 
-2. **New Import Patterns**:
-   - Added clear prefixes to all functions (`genai_*` and `adk_*`)
-   - Created proper re-exports in `__init__.py`
-   - Maintained backward compatibility
+## Step 1: Update Your Imports
 
-3. **Implementation Improvements**:
-   - Enhanced error handling
-   - Added support for both ContexaTool instances and decorated functions
-   - Improved mock implementations for testing
-   - Added synchronous wrappers for async functions
-
-## Migration Steps
-
-### For New Code
-
-Use the new prefixed functions and import from the dedicated modules:
+### Old Imports
 
 ```python
-# For Google GenAI (preferred)
-from contexa_sdk.adapters.google import genai_tool, genai_model, genai_agent
-
-# For Google ADK (preferred)
-from contexa_sdk.adapters.google import adk_tool, adk_model, adk_agent
+# Old approach - mixed GenAI and ADK
+from contexa_sdk.adapters import google
+from contexa_sdk.adapters.google_adk import GoogleADKAdapter
 ```
 
-### For Existing Code
-
-Your existing code using the non-prefixed functions will continue to work:
+### New Imports
 
 ```python
-# These will keep working (uses GenAI implementations by default)
+# For Google GenAI (Gemini) 
+from contexa_sdk.adapters.google import genai_tool, genai_model, genai_agent
+
+# For Google ADK
+from contexa_sdk.adapters.google import adk_tool, adk_model, adk_agent
+
+# For backward compatibility (uses GenAI by default)
 from contexa_sdk.adapters.google import tool, model, agent
 ```
 
-However, we recommend migrating to the new prefixed functions for clarity.
+## Step 2: Update Your Function Calls
 
-### Deprecation Timeline
+### Old Usage (Mixed GenAI and ADK)
 
-- **Current Release**: Both old and new import patterns supported
-- **Next Minor Release**: Warnings added for old import patterns
-- **Next Major Release**: Old import patterns may be removed
+```python
+# Old approach - not clear which implementation is used
+google_tool = google.tool(my_tool)
+google_model = google.model(my_model)
+google_agent = google.agent(my_agent)
+```
 
-## Installation Updates
+### New Usage (Explicit GenAI or ADK)
 
-The dependencies are now more clearly separated:
+```python
+# For Google GenAI (Gemini)
+genai_tool = genai_tool(my_tool)
+genai_model = genai_model(my_model)
+genai_agent = genai_agent(my_agent)
+
+# For Google ADK
+adk_tool = adk_tool(my_tool)
+adk_model = adk_model(my_model)
+adk_agent = adk_agent(my_agent)
+```
+
+## Step 3: Update Your Dependencies
+
+### Old Dependencies
 
 ```bash
-# For GenAI only
+pip install contexa-sdk[google]  # Installed both, but usage was unclear
+```
+
+### New Dependencies
+
+```bash
+# For Google GenAI only
 pip install contexa-sdk[google-genai]
 
-# For ADK only
+# For Google ADK only
 pip install contexa-sdk[google-adk]
 
-# For both
+# For both (same as before)
 pip install contexa-sdk[google]
 ```
 
-## Documentation
+## Common Migration Patterns
 
-For detailed documentation on the differences between the two adapters and when to use each, see [Google Adapters Documentation](google_adapters.md). 
+### Scenario 1: You were using Gemini models with the Google adapter
+
+If you were using the Google adapter primarily for accessing Gemini models:
+
+```python
+# Old code
+from contexa_sdk.adapters import google
+
+model = ContexaModel(provider="google", model_name="gemini-pro")
+google_model = google.model(model)
+```
+
+Change to:
+
+```python
+# New code - explicit GenAI
+from contexa_sdk.adapters.google import genai_model
+
+model = ContexaModel(provider="google", model_name="gemini-pro")
+google_model = genai_model(model)
+```
+
+### Scenario 2: You were using Google ADK functionality
+
+If you were specifically using Google ADK features:
+
+```python
+# Old code
+from contexa_sdk.adapters.google_adk import GoogleADKAdapter
+
+adk_adapter = GoogleADKAdapter()
+adk_tool = adk_adapter.tool(my_tool)
+```
+
+Change to:
+
+```python
+# New code - explicit ADK
+from contexa_sdk.adapters.google import adk_tool
+
+adk_tool = adk_tool(my_tool)
+```
+
+### Scenario 3: You want to maintain maximum backward compatibility
+
+If you want to ensure your code works with minimal changes:
+
+```python
+# Old code
+from contexa_sdk.adapters import google
+
+google_agent = google.agent(my_agent)
+```
+
+This will continue to work, as the non-prefixed functions are preserved for backward compatibility. However, they now use the GenAI implementation by default.
+
+## New Features
+
+The restructured adapters include several improvements:
+
+1. **Synchronous Wrappers**: All adapter functions now have synchronous equivalents (e.g., `adk_agent` is synchronous, and there's an underlying `async_adk_agent` that it calls)
+
+2. **Better Error Handling**: More informative error messages with suggestions for fixing issues
+
+3. **Support for Both Usage Patterns**: Both adapters now handle direct `ContexaTool` instances and decorated functions
+
+4. **Mock Implementations for Testing**: Enhanced mock implementations that don't require dependencies
+
+## Choosing the Right Adapter
+
+- **Google GenAI** (`genai_*`): Use for direct access to Gemini models, simpler integration with basic function calling
+- **Google ADK** (`adk_*`): Use for advanced agent features, complex reasoning, and Google's agent development ecosystem
+
+For more details, see the [Google Adapters Documentation](docs/adapters/google_adapters.md) and try the [Google Adapter Comparison Example](examples/google_adapter_comparison.py). 
