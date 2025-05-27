@@ -55,7 +55,7 @@ from contexa_sdk.core.prompt import ContexaPrompt
 
 # Import observability modules
 from contexa_sdk.observability.logger import get_logger
-from contexa_sdk.observability.tracer import trace, SpanKind, Span
+from contexa_sdk.observability.tracer import trace, SpanKind, Span, get_tracer
 from contexa_sdk.observability.metrics import Timer, agent_requests, agent_latency, model_tokens, tool_calls, tool_latency, handoffs, active_agents
 
 # Create a logger for this module
@@ -233,6 +233,7 @@ class ContexaAgent:
         self.config = config or ContexaConfig()
         self.agent_id = agent_id or str(uuid.uuid4())
         self.memory = memory or AgentMemory()
+        self.metadata = {}  # Initialize metadata dictionary
         
         # Increment active agents count
         active_agents.inc()
@@ -267,7 +268,7 @@ class ContexaAgent:
             Exception: Any errors encountered during agent execution
         """
         # Start metrics timer
-        with Timer(agent_latency, agent_id=self.agent_id, agent_name=self.name):
+        with Timer(agent_latency.name, tags={"agent_id": self.agent_id, "agent_name": self.name}).time():
             # Add user message to memory
             self.memory.add_message("user", query)
             
@@ -306,7 +307,7 @@ class ContexaAgent:
                 
             try:
                 # Create span for model generation
-                with Span(name=f"model.generate", kind=SpanKind.MODEL) as span:
+                with get_tracer().span(name=f"model.generate", kind=SpanKind.MODEL) as span:
                     span.set_attribute("model.name", self.model.model_name)
                     span.set_attribute("model.provider", self.model.provider)
                     span.set_attribute("input.tokens", self._estimate_tokens(messages))
@@ -316,7 +317,7 @@ class ContexaAgent:
                     
                     # Record output token metrics
                     output_tokens = self._estimate_tokens([response])
-                    model_tokens.inc(output_tokens, model_name=self.model.model_name, provider=self.model.provider, type="output")
+                    model_tokens.inc(output_tokens, tags={"model_name": self.model.model_name, "provider": self.model.provider, "type": "output"})
                     span.set_attribute("output.tokens", output_tokens)
                 
                 # Parse potential tool calls
@@ -336,7 +337,7 @@ class ContexaAgent:
                         tool = next((t for t in self.tools if t.name == tool_name), None)
                         if tool:
                             # Create span and increment metrics for tool call
-                            with Span(name=f"tool.{tool_name}", kind=SpanKind.TOOL) as span:
+                            with get_tracer().span(name=f"tool.{tool_name}", kind=SpanKind.TOOL) as span:
                                 span.set_attribute("tool.name", tool_name)
                                 span.set_attribute("tool.parameters", json.dumps(tool_params))
                                 
@@ -347,10 +348,10 @@ class ContexaAgent:
                                 )
                                 
                                 # Record tool call metric
-                                tool_calls.inc(1, tool_name=tool_name, agent_id=self.agent_id, status="success")
+                                tool_calls.inc(1, tags={"tool_name": tool_name, "agent_id": self.agent_id, "status": "success"})
                                 
                                 # Measure tool execution time
-                                with Timer(tool_latency, tool_name=tool_name, agent_id=self.agent_id):
+                                with Timer(tool_latency.name, tags={"tool_name": tool_name, "agent_id": self.agent_id}).time():
                                     # Call the tool
                                     tool_result = await tool(**tool_params)
                                 
@@ -363,7 +364,7 @@ class ContexaAgent:
                                 span.set_attribute("tool.result", str(tool_result))
                             
                             # Generate a final response
-                            with Span(name=f"model.final_response", kind=SpanKind.MODEL) as span:
+                            with get_tracer().span(name=f"model.final_response", kind=SpanKind.MODEL) as span:
                                 final_messages = [
                                     ModelMessage(role="system", content=self.system_prompt),
                                     *self.memory.get_messages(),
@@ -378,7 +379,7 @@ class ContexaAgent:
                                 
                                 # Record input token metrics
                                 input_tokens = self._estimate_tokens(final_messages)
-                                model_tokens.inc(input_tokens, model_name=self.model.model_name, provider=self.model.provider, type="input")
+                                model_tokens.inc(input_tokens, tags={"model_name": self.model.model_name, "provider": self.model.provider, "type": "input"})
                                 span.set_attribute("input.tokens", input_tokens)
                                 
                                 # Generate final response
@@ -386,7 +387,7 @@ class ContexaAgent:
                                 
                                 # Record output token metrics
                                 output_tokens = self._estimate_tokens([final_response])
-                                model_tokens.inc(output_tokens, model_name=self.model.model_name, provider=self.model.provider, type="output")
+                                model_tokens.inc(output_tokens, tags={"model_name": self.model.model_name, "provider": self.model.provider, "type": "output"})
                                 span.set_attribute("output.tokens", output_tokens)
                                 
                                 output = final_response.content
@@ -400,13 +401,13 @@ class ContexaAgent:
                             }
                         )
                         # Record failed tool call metric
-                        tool_calls.inc(1, tool_name="unknown", agent_id=self.agent_id, status="error")
+                        tool_calls.inc(1, tags={"tool_name": "unknown", "agent_id": self.agent_id, "status": "error"})
                         
                 # Add assistant message to memory
                 self.memory.add_message("assistant", output)
                 
                 # Increment successful request count
-                agent_requests.inc(1, agent_id=self.agent_id, agent_name=self.name, status="success")
+                agent_requests.inc(1, tags={"agent_id": self.agent_id, "agent_name": self.name, "status": "success"})
                 
                 return output
             except Exception as e:
@@ -420,7 +421,7 @@ class ContexaAgent:
                 )
                 
                 # Increment failed request count
-                agent_requests.inc(1, agent_id=self.agent_id, agent_name=self.name, status="error")
+                agent_requests.inc(1, tags={"agent_id": self.agent_id, "agent_name": self.name, "status": "error"})
                 
                 # Re-raise the exception
                 raise
@@ -458,7 +459,7 @@ class ContexaAgent:
             Exception: Any errors encountered during the handoff
         """
         # Start a span for the handoff
-        with Span(name=f"handoff.{self.name}_to_{getattr(target_agent, 'name', 'unknown')}", kind=SpanKind.HANDOFF) as span:
+        with get_tracer().span(name=f"handoff.{self.name}_to_{getattr(target_agent, 'name', 'unknown')}", kind=SpanKind.HANDOFF) as span:
             # Get target agent metadata for logging and metrics
             target_agent_id = getattr(target_agent, "agent_id", "unknown")
             target_agent_name = getattr(target_agent, "name", "unknown")
@@ -514,7 +515,7 @@ class ContexaAgent:
             self.memory.add_handoff(handoff_data)
             
             # Record handoff metric
-            handoffs.inc(1, source_agent_id=self.agent_id, target_agent_id=target_agent_id, status="initiated")
+            handoffs.inc(1, tags={"source_agent_id": self.agent_id, "target_agent_id": target_agent_id, "status": "initiated"})
             
             try:
                 # Determine if the target agent is a ContexaAgent or a framework-specific agent
@@ -535,7 +536,7 @@ class ContexaAgent:
                     handoff_data.result = result
                     
                     # Record successful handoff metric
-                    handoffs.inc(1, source_agent_id=self.agent_id, target_agent_id=target_agent_id, status="success")
+                    handoffs.inc(1, tags={"source_agent_id": self.agent_id, "target_agent_id": target_agent_id, "status": "success"})
                     
                     span.set_attribute("handoff.result", result)
                     
@@ -553,12 +554,12 @@ class ContexaAgent:
                     )
                     
                     # Record failed handoff metric
-                    handoffs.inc(1, source_agent_id=self.agent_id, target_agent_id=target_agent_id, status="error")
+                    handoffs.inc(1, tags={"source_agent_id": self.agent_id, "target_agent_id": target_agent_id, "status": "error"})
                     
                     raise NotImplementedError(error_msg)
             except Exception as e:
                 # Record failed handoff metric
-                handoffs.inc(1, source_agent_id=self.agent_id, target_agent_id=target_agent_id, status="error")
+                handoffs.inc(1, tags={"source_agent_id": self.agent_id, "target_agent_id": target_agent_id, "status": "error"})
                 
                 # Log the error
                 logger.error(
@@ -697,11 +698,11 @@ class ContexaAgent:
             memory=memory,
         )
     
-    def _estimate_tokens(self, messages: List[ModelMessage]) -> int:
-        """Estimate the number of tokens in a list of messages.
+    def _estimate_tokens(self, messages) -> int:
+        """Estimate the number of tokens in a list of messages or responses.
         
         Args:
-            messages: List of messages
+            messages: List of ModelMessage objects or ModelResponse objects
             
         Returns:
             Estimated token count
@@ -709,7 +710,15 @@ class ContexaAgent:
         # This is a simple estimation - about 4 chars per token
         total_chars = 0
         for message in messages:
-            total_chars += len(message.role) + len(message.content or "")
+            if hasattr(message, 'role') and hasattr(message, 'content'):
+                # ModelMessage object
+                total_chars += len(message.role) + len(message.content or "")
+            elif hasattr(message, 'content'):
+                # ModelResponse object
+                total_chars += len(message.content or "")
+            else:
+                # Fallback for unknown object types
+                total_chars += len(str(message))
         
         return total_chars // 4
 

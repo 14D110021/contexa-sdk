@@ -427,6 +427,163 @@ class LangChainAdapter(BaseAdapter):
             
         return result
 
+    async def adapt_langchain_agent(
+        self, 
+        langchain_agent_executor: Any,
+        name: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> ContexaAgent:
+        """Adapt a LangChain AgentExecutor to a Contexa agent.
+        
+        This method takes a LangChain AgentExecutor and converts it to a Contexa agent,
+        extracting the tools, model configuration, and instructions to create an equivalent
+        Contexa agent that maintains the same functionality.
+        
+        Args:
+            langchain_agent_executor: The LangChain AgentExecutor to convert
+            name: Optional name override for the Contexa agent
+            description: Optional description override for the Contexa agent
+            
+        Returns:
+            A Contexa agent that wraps the LangChain AgentExecutor functionality
+            
+        Raises:
+            ImportError: If required dependencies are not installed
+            TypeError: If the input is not a valid LangChain AgentExecutor
+            
+        Example:
+            ```python
+            from langchain.agents import AgentExecutor
+            from contexa_sdk.adapters import langchain
+            
+            # Create a LangChain agent
+            lc_agent = AgentExecutor(...)
+            
+            # Convert to Contexa agent
+            contexa_agent = await langchain.adapt_agent(lc_agent)
+            result = await contexa_agent.run("What's the weather in Paris?")
+            ```
+        """
+        try:
+            from langchain.agents import AgentExecutor
+        except ImportError:
+            raise ImportError(
+                "LangChain not found. Install with `pip install contexa-sdk[langchain]`."
+            )
+            
+        if not isinstance(langchain_agent_executor, AgentExecutor):
+            raise TypeError("langchain_agent_executor must be a LangChain AgentExecutor object")
+        
+        # Extract agent metadata
+        agent_name = name or getattr(langchain_agent_executor, 'name', 'Adapted LangChain Agent')
+        agent_description = description or getattr(langchain_agent_executor, 'description', '')
+        
+        # Extract tools from the LangChain agent
+        contexa_tools = []
+        lc_tools = getattr(langchain_agent_executor, 'tools', [])
+        
+        for i, lc_tool in enumerate(lc_tools):
+            # Extract tool metadata
+            tool_name = getattr(lc_tool, 'name', f'tool_{i}')
+            tool_description = getattr(lc_tool, 'description', f'Tool {tool_name}')
+            
+            # Create a wrapper function that calls the original LangChain tool
+            async def create_tool_wrapper(original_tool):
+                async def tool_wrapper(**kwargs) -> str:
+                    """Wrapper for LangChain tool."""
+                    try:
+                        # Call the original LangChain tool
+                        if hasattr(original_tool, '_arun'):
+                            result = await original_tool._arun(**kwargs)
+                        elif hasattr(original_tool, '_run'):
+                            result = original_tool._run(**kwargs)
+                        else:
+                            # Fallback to invoke if available
+                            result = await original_tool.ainvoke(kwargs) if hasattr(original_tool, 'ainvoke') else original_tool.invoke(kwargs)
+                        
+                        # Ensure we return a string
+                        return str(result)
+                    except Exception as e:
+                        return f"Error calling tool {tool_name}: {str(e)}"
+                
+                return tool_wrapper
+            
+            # Create the wrapper
+            wrapper = await create_tool_wrapper(lc_tool)
+            
+            # Create a Contexa tool
+            try:
+                # Try to extract parameter schema from the LangChain tool
+                args_schema = getattr(lc_tool, 'args_schema', None)
+                if args_schema:
+                    schema = args_schema
+                else:
+                    # Fallback to a generic schema
+                    from pydantic import BaseModel
+                    class GenericInput(BaseModel):
+                        input: str = "Generic input"
+                    schema = GenericInput
+                
+            except Exception:
+                # Fallback to a generic schema
+                from pydantic import BaseModel
+                class GenericInput(BaseModel):
+                    input: str = "Generic input"
+                schema = GenericInput
+            
+            contexa_tool = ContexaTool(
+                func=wrapper,
+                name=tool_name,
+                description=tool_description,
+                schema=schema
+            )
+            contexa_tools.append(contexa_tool)
+        
+        # Create a Contexa model
+        from contexa_sdk.core.config import ContexaConfig
+        config = ContexaConfig()
+        
+        # Try to extract model information from the LangChain agent
+        model_name = "gpt-4o"  # Default
+        if hasattr(langchain_agent_executor, 'agent') and hasattr(langchain_agent_executor.agent, 'llm'):
+            llm = langchain_agent_executor.agent.llm
+            if hasattr(llm, 'model_name'):
+                model_name = llm.model_name
+            elif hasattr(llm, 'model'):
+                model_name = llm.model
+        
+        contexa_model = ContexaModel(
+            model_name=model_name,
+            provider="openai",  # Default to OpenAI
+            config=config
+        )
+        
+        # Extract system prompt if available
+        system_prompt = "You are a helpful assistant."
+        if hasattr(langchain_agent_executor, 'agent') and hasattr(langchain_agent_executor.agent, 'prompt'):
+            prompt = langchain_agent_executor.agent.prompt
+            if hasattr(prompt, 'messages') and prompt.messages:
+                for message in prompt.messages:
+                    if hasattr(message, 'content') and 'system' in str(type(message)).lower():
+                        system_prompt = message.content
+                        break
+        
+        # Create the Contexa agent
+        contexa_agent = ContexaAgent(
+            tools=contexa_tools,
+            model=contexa_model,
+            name=agent_name,
+            description=agent_description,
+            system_prompt=system_prompt
+        )
+        
+        # Store reference to the original LangChain agent
+        contexa_agent.metadata = contexa_agent.metadata or {}
+        contexa_agent.metadata["original_langchain_agent"] = langchain_agent_executor
+        contexa_agent.metadata["adapted_from"] = "langchain_agent_executor"
+        
+        return contexa_agent
+
 
 # Create a singleton instance
 _adapter = LangChainAdapter()
@@ -436,6 +593,7 @@ tool = _adapter.tool
 model = _adapter.model
 agent = _adapter.agent
 prompt = _adapter.prompt
+adapt_agent = _adapter.adapt_langchain_agent
 
 # Expose handoff method at the module level
 async def handoff(

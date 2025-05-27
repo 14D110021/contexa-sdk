@@ -1,0 +1,36 @@
+# Test_real_life-1-rupesh Dependencies
+# Core SDK and Framework Dependencies
+openai>=1.2.0
+contexa-sdk[openai]>=0.1.0
+
+# MCP Integration Tools
+aiohttp>=3.8.0
+websockets>=11.0.0
+pydantic>=2.0.0
+
+# Development and Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Performance and Monitoring
+psutil>=5.9.0
+memory-profiler>=0.60.0
+line-profiler>=4.0.0
+
+# Documentation and Examples
+jupyter>=1.0.0
+matplotlib>=3.6.0
+rich>=13.0.0
+
+# Utility Libraries
+python-dotenv>=1.0.0
+click>=8.0.0
+asyncio-mqtt>=0.13.0
+
+# Optional: For advanced testing scenarios
+httpx>=0.24.0
+faker>=19.0.0
+factory-boy>=3.3.0 

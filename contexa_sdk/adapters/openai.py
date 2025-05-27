@@ -78,6 +78,7 @@ class OpenAIAdapter(BaseAdapter):
         prompt: Convert a Contexa prompt to an OpenAI-compatible string
         handoff_to_openai_agent: Handle handoff to an OpenAI agent
         adapt_openai_assistant: Create a Contexa agent from an OpenAI Assistant
+        adapt_openai_agent: Adapt an OpenAI Agents SDK Agent to a Contexa agent
     """
     
     def tool(self, tool: ContexaTool) -> Any:
@@ -116,10 +117,10 @@ class OpenAIAdapter(BaseAdapter):
             ```
         """
         try:
-            from openai_agents import function_tool
+            from agents import function_tool
         except ImportError:
             raise ImportError(
-                "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
+                "OpenAI Agents SDK not found. Install with `pip install openai-agents`."
             )
             
         # Create a wrapper function that will call our tool
@@ -232,10 +233,10 @@ class OpenAIAdapter(BaseAdapter):
             ```
         """
         try:
-            from openai_agents import Agent
+            from agents import Agent
         except ImportError:
             raise ImportError(
-                "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
+                "OpenAI Agents SDK not found. Install with `pip install openai-agents`."
             )
             
         # Convert the tools
@@ -316,11 +317,11 @@ class OpenAIAdapter(BaseAdapter):
             The target agent's response
         """
         try:
-            from openai_agents import Agent, Runner
+            from agents import Agent, Runner
             from openai import OpenAI
         except ImportError:
             raise ImportError(
-                "OpenAI Agents SDK not found. Install with `pip install contexa-sdk[openai]`."
+                "OpenAI Agents SDK not found. Install with `pip install openai-agents`."
             )
             
         if not isinstance(target_agent, Agent):
@@ -438,6 +439,154 @@ class OpenAIAdapter(BaseAdapter):
         
         return agent
 
+    async def adapt_openai_agent(
+        self, 
+        openai_agent: Any,
+        name: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> ContexaAgent:
+        """Adapt an OpenAI Agents SDK Agent to a Contexa agent.
+        
+        This method takes an OpenAI Agents SDK Agent and converts it to a Contexa agent,
+        extracting the tools, model configuration, and instructions to create an equivalent
+        Contexa agent that maintains the same functionality.
+        
+        Args:
+            openai_agent: The OpenAI Agents SDK Agent to convert
+            name: Optional name override for the Contexa agent
+            description: Optional description override for the Contexa agent
+            
+        Returns:
+            A Contexa agent that wraps the OpenAI Agent functionality
+            
+        Raises:
+            ImportError: If required dependencies are not installed
+            TypeError: If the input is not a valid OpenAI Agent
+            
+        Example:
+            ```python
+            from openai_agents import Agent, function_tool
+            from contexa_sdk.adapters import openai
+            
+            # Create an OpenAI agent
+            @function_tool
+            def get_weather(location: str) -> str:
+                return f"Weather in {location} is sunny"
+                
+            oa_agent = Agent(
+                name="Weather Assistant",
+                instructions="You help users get weather information",
+                tools=[get_weather],
+                model="gpt-4o"
+            )
+            
+            # Convert to Contexa agent
+            contexa_agent = await openai.adapt_agent(oa_agent)
+            result = await contexa_agent.run("What's the weather in Paris?")
+            ```
+        """
+        try:
+            from agents import Agent
+        except ImportError:
+            raise ImportError(
+                "OpenAI Agents SDK not found. Install with `pip install openai-agents`."
+            )
+            
+        if not isinstance(openai_agent, Agent):
+            raise TypeError("openai_agent must be an OpenAI Agents SDK Agent object")
+        
+        # Extract agent metadata
+        agent_name = name or getattr(openai_agent, 'name', 'Adapted OpenAI Agent')
+        agent_description = description or getattr(openai_agent, 'description', '')
+        instructions = getattr(openai_agent, 'instructions', 'You are a helpful assistant.')
+        model_name = getattr(openai_agent, 'model', 'gpt-4o')
+        
+        # Convert OpenAI tools to Contexa tools
+        contexa_tools = []
+        openai_tools = getattr(openai_agent, 'tools', [])
+        
+        for i, oa_tool in enumerate(openai_tools):
+            # Extract tool metadata
+            tool_name = getattr(oa_tool, '__name__', f'tool_{i}')
+            tool_description = getattr(oa_tool, '__doc__', f'Tool {tool_name}')
+            
+            # Create a wrapper function that calls the original OpenAI tool
+            async def create_tool_wrapper(original_tool):
+                async def tool_wrapper(**kwargs) -> str:
+                    """Wrapper for OpenAI tool."""
+                    try:
+                        # Call the original OpenAI tool
+                        if inspect.iscoroutinefunction(original_tool):
+                            result = await original_tool(**kwargs)
+                        else:
+                            result = original_tool(**kwargs)
+                        
+                        # Ensure we return a string
+                        return str(result)
+                    except Exception as e:
+                        return f"Error calling tool {tool_name}: {str(e)}"
+                
+                return tool_wrapper
+            
+            # Create the wrapper
+            wrapper = await create_tool_wrapper(oa_tool)
+            
+            # Create a Contexa tool
+            try:
+                # Try to extract parameter schema from the OpenAI tool
+                sig = inspect.signature(oa_tool)
+                from pydantic import create_model
+                
+                fields = {}
+                for param_name, param in sig.parameters.items():
+                    if param.annotation != inspect.Parameter.empty:
+                        fields[param_name] = (param.annotation, ...)
+                    else:
+                        fields[param_name] = (str, ...)  # Default to string
+                
+                schema = create_model(f"{tool_name.title()}Input", **fields)
+                
+            except Exception:
+                # Fallback to a generic schema
+                from pydantic import BaseModel
+                class GenericInput(BaseModel):
+                    input: str = "Generic input"
+                schema = GenericInput
+            
+            contexa_tool = ContexaTool(
+                func=wrapper,
+                name=tool_name,
+                description=tool_description,
+                schema=schema
+            )
+            contexa_tools.append(contexa_tool)
+        
+        # Create a Contexa model
+        from contexa_sdk.core.config import ContexaConfig
+        config = ContexaConfig()
+        
+        contexa_model = ContexaModel(
+            model_name=model_name,
+            provider="openai",
+            config=config
+        )
+        
+        # Create the Contexa agent
+        contexa_agent = ContexaAgent(
+            tools=contexa_tools,
+            model=contexa_model,
+            name=agent_name,
+            description=agent_description,
+            system_prompt=instructions
+        )
+        
+        # Store reference to the original OpenAI agent
+        contexa_agent.metadata = contexa_agent.metadata or {}
+        contexa_agent.metadata["original_openai_agent"] = openai_agent
+        contexa_agent.metadata["adapted_from"] = "openai_agents_sdk"
+        
+        return contexa_agent
+
 
 # Create a singleton instance
 _adapter = OpenAIAdapter()
@@ -448,6 +597,7 @@ model = _adapter.model
 agent = _adapter.agent
 prompt = _adapter.prompt
 adapt_assistant = _adapter.adapt_openai_assistant
+adapt_agent = _adapter.adapt_openai_agent
 
 # Expose handoff method at the module level
 async def handoff(

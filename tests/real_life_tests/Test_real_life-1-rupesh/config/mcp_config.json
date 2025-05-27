@@ -1,0 +1,53 @@
+{
+  "mcp_server": {
+    "url": "https://api.toolrouter.ai/u/c8b0ceae-6a25-445d-a8fe-4cf4327cc70a/sse",
+    "protocol": "sse",
+    "timeout": 30,
+    "retry_attempts": 3,
+    "retry_delay": 1.0
+  },
+  "tools": {
+    "context7": {
+      "name": "context7_docs",
+      "description": "Retrieve up-to-date documentation for libraries and frameworks",
+      "enabled": true,
+      "max_tokens": 5000,
+      "cache_ttl": 3600
+    },
+    "exa_search": {
+      "name": "exa_web_search", 
+      "description": "Search the web for technical content and solutions",
+      "enabled": true,
+      "max_results": 5,
+      "cache_ttl": 1800
+    },
+    "code_analysis": {
+      "name": "code_analyzer",
+      "description": "Analyze code for patterns, issues, and improvements",
+      "enabled": true,
+      "supported_languages": ["python", "javascript", "typescript", "java", "go", "rust"]
+    }
+  },
+  "agent_config": {
+    "name": "CodeMaster Pro",
+    "description": "Advanced coding assistant with MCP tool integration",
+    "model": "gpt-4.1",
+    "temperature": 0.1,
+    "max_tokens": 4000,
+    "system_prompt": "You are CodeMaster Pro, an advanced coding assistant with access to real-time documentation and web search capabilities. Help users with coding tasks, provide accurate technical guidance, and leverage your tools to find the most current information."
+  },
+  "performance": {
+    "enable_monitoring": true,
+    "log_requests": true,
+    "track_token_usage": true,
+    "measure_latency": true
+  },
+  "security": {
+    "validate_inputs": true,
+    "sanitize_outputs": true,
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 60
+    }
+  }
+} 
