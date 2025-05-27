@@ -17,6 +17,10 @@ from contexa_sdk.core.tool import ContexaTool
 from .protocol import MCPProtocol, MCPRequest, MCPResponse, MCPNotification, MCPErrorCode
 from .capabilities import ServerCapabilities, create_default_server_capabilities
 from .transport import MCPTransport, create_transport
+from .handlers import (
+    ResourceHandler, ToolHandler, PromptHandler, SamplingHandler,
+    create_handlers, MCPHandler
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,9 @@ class MCPServer:
         self.agents: Dict[str, ContexaAgent] = {}
         self.tools: Dict[str, ContexaTool] = {}
         
+        # Feature handlers
+        self.handlers: Dict[str, MCPHandler] = create_handlers(self.config.__dict__)
+        
         # Setup protocol handlers
         self._setup_protocol_handlers()
     
@@ -92,6 +99,19 @@ class MCPServer:
         # Tool handlers
         self.protocol.register_request_handler("tools/list", self._handle_list_tools)
         self.protocol.register_request_handler("tools/call", self._handle_call_tool)
+        
+        # Resource handlers
+        self.protocol.register_request_handler("resources/list", self._handle_list_resources)
+        self.protocol.register_request_handler("resources/read", self._handle_read_resource)
+        self.protocol.register_request_handler("resources/subscribe", self._handle_subscribe_resource)
+        self.protocol.register_request_handler("resources/unsubscribe", self._handle_unsubscribe_resource)
+        
+        # Prompt handlers
+        self.protocol.register_request_handler("prompts/list", self._handle_list_prompts)
+        self.protocol.register_request_handler("prompts/get", self._handle_get_prompt)
+        
+        # Sampling handlers
+        self.protocol.register_request_handler("sampling/createMessage", self._handle_create_message)
     
     async def _handle_initialize(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle initialization request."""
@@ -134,14 +154,8 @@ class MCPServer:
     
     async def _handle_list_tools(self, request: MCPRequest) -> Dict[str, Any]:
         """Handle tools/list request."""
-        tools = []
-        for tool_name, tool in self.tools.items():
-            tools.append({
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.parameters_schema if hasattr(tool, 'parameters_schema') else {}
-            })
-        
+        tool_handler = self.handlers["tool"]
+        tools = await tool_handler.list_tools()
         return {"tools": tools}
     
     async def _handle_call_tool(self, request: MCPRequest) -> Dict[str, Any]:
@@ -150,49 +164,118 @@ class MCPServer:
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         
-        if tool_name not in self.tools:
-            raise Exception(f"Tool '{tool_name}' not found")
-        
-        tool = self.tools[tool_name]
-        
-        try:
-            # Execute the tool
-            result = await tool.execute(arguments)
-            
-            return {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": str(result)
-                    }
-                ]
-            }
-        except Exception as e:
-            logger.exception(f"Error executing tool {tool_name}")
-            return {
-                "content": [
-                    {
-                        "type": "text", 
-                        "text": f"Error executing tool: {str(e)}"
-                    }
-                ],
-                "isError": True
-            }
+        tool_handler = self.handlers["tool"]
+        return await tool_handler.call_tool(tool_name, arguments)
     
-    def register_agent(self, agent: ContexaAgent, name: Optional[str] = None):
+    async def _handle_list_resources(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle resources/list request."""
+        resource_handler = self.handlers["resource"]
+        resources = await resource_handler.list_resources()
+        return {"resources": resources}
+    
+    async def _handle_read_resource(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle resources/read request."""
+        params = request.params or {}
+        uri = params.get("uri")
+        
+        if not uri:
+            raise ValueError("Missing required parameter: uri")
+        
+        resource_handler = self.handlers["resource"]
+        return await resource_handler.read_resource(uri)
+    
+    async def _handle_subscribe_resource(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle resources/subscribe request."""
+        params = request.params or {}
+        uri = params.get("uri")
+        
+        if not uri:
+            raise ValueError("Missing required parameter: uri")
+        
+        # Use request ID as client ID for simplicity
+        client_id = str(request.id)
+        
+        resource_handler = self.handlers["resource"]
+        await resource_handler.subscribe_to_resource(client_id, uri)
+        
+        return {"success": True}
+    
+    async def _handle_unsubscribe_resource(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle resources/unsubscribe request."""
+        params = request.params or {}
+        uri = params.get("uri")
+        
+        if not uri:
+            raise ValueError("Missing required parameter: uri")
+        
+        # Use request ID as client ID for simplicity
+        client_id = str(request.id)
+        
+        resource_handler = self.handlers["resource"]
+        await resource_handler.unsubscribe_from_resource(client_id, uri)
+        
+        return {"success": True}
+    
+    async def _handle_list_prompts(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle prompts/list request."""
+        prompt_handler = self.handlers["prompt"]
+        prompts = await prompt_handler.list_prompts()
+        return {"prompts": prompts}
+    
+    async def _handle_get_prompt(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle prompts/get request."""
+        params = request.params or {}
+        name = params.get("name")
+        arguments = params.get("arguments", {})
+        
+        if not name:
+            raise ValueError("Missing required parameter: name")
+        
+        prompt_handler = self.handlers["prompt"]
+        return await prompt_handler.get_prompt(name, arguments)
+    
+    async def _handle_create_message(self, request: MCPRequest) -> Dict[str, Any]:
+        """Handle sampling/createMessage request."""
+        params = request.params or {}
+        messages = params.get("messages", [])
+        model_preferences = params.get("modelPreferences")
+        system_prompt = params.get("systemPrompt")
+        include_context = params.get("includeContext", "none")
+        temperature = params.get("temperature")
+        max_tokens = params.get("maxTokens")
+        stop_sequences = params.get("stopSequences")
+        
+        sampling_handler = self.handlers["sampling"]
+        return await sampling_handler.create_message(
+            messages=messages,
+            model_preferences=model_preferences,
+            system_prompt=system_prompt,
+            include_context=include_context,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stop_sequences=stop_sequences
+        )
+    
+    async def register_agent(self, agent: ContexaAgent, name: Optional[str] = None):
         """Register a Contexa agent with the MCP server."""
         agent_name = name or agent.name or f"agent_{len(self.agents)}"
         self.agents[agent_name] = agent
         
-        # Register agent's tools
+        # Register agent's tools with the tool handler
+        tool_handler = self.handlers["tool"]
         for tool in agent.tools:
-            self.tools[tool.name] = tool
+            self.tools[tool.name] = tool  # Keep for backward compatibility
+            await tool_handler.register_tool(tool)
         
-        logger.info(f"Registered agent: {agent_name}")
+        logger.info(f"Registered agent: {agent_name} with {len(agent.tools)} tools")
     
-    def register_tool(self, tool: ContexaTool):
+    async def register_tool(self, tool: ContexaTool):
         """Register a standalone tool with the MCP server."""
-        self.tools[tool.name] = tool
+        self.tools[tool.name] = tool  # Keep for backward compatibility
+        
+        tool_handler = self.handlers["tool"]
+        await tool_handler.register_tool(tool)
+        
         logger.info(f"Registered tool: {tool.name}")
     
     async def start(self):
@@ -204,6 +287,11 @@ class MCPServer:
         logger.info(f"Starting MCP server: {self.config.name}")
         
         try:
+            # Initialize handlers
+            for handler_name, handler in self.handlers.items():
+                await handler.initialize()
+                logger.debug(f"Initialized {handler_name} handler")
+            
             # Create and configure transport
             self.transport = create_transport(
                 self.config.transport_type,
@@ -241,7 +329,25 @@ class MCPServer:
             await self.transport.stop()
             self.transport = None
         
+        # Cleanup handlers
+        for handler_name, handler in self.handlers.items():
+            await handler.cleanup()
+            logger.debug(f"Cleaned up {handler_name} handler")
+        
         logger.info("MCP server stopped")
+    
+    def get_server_info(self) -> Dict[str, Any]:
+        """Get server information for handlers and clients."""
+        return {
+            "name": self.config.name,
+            "version": self.config.version,
+            "description": self.config.description,
+            "running": self.running,
+            "initialized": self.initialized,
+            "agent_count": len(self.agents),
+            "tool_count": len(self.tools),
+            "capabilities": self.capabilities.to_dict() if self.capabilities else {}
+        }
     
     async def run(self):
         """Run the MCP server (blocking)."""
@@ -257,7 +363,7 @@ class MCPServer:
             await self.stop()
 
 
-def create_mcp_server_for_agent(
+async def create_mcp_server_for_agent(
     agent: ContexaAgent,
     transport_type: str = "stdio",
     **kwargs
@@ -271,6 +377,6 @@ def create_mcp_server_for_agent(
     )
     
     server = MCPServer(config)
-    server.register_agent(agent)
+    await server.register_agent(agent)
     
     return server

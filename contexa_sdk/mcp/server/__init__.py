@@ -13,7 +13,7 @@ The implementation follows the MCP specification v2025-03-26 and includes:
 - Security and consent management
 """
 
-from .mcp_server import MCPServer, MCPServerConfig
+from .mcp_server import MCPServer, MCPServerConfig, create_mcp_server_for_agent
 from .protocol import MCPProtocol, MCPMessage, MCPRequest, MCPResponse, MCPNotification
 from .capabilities import ServerCapabilities, ResourceCapability, ToolCapability, PromptCapability
 from .transport import StdioTransport, HTTPTransport, SSETransport
@@ -22,7 +22,8 @@ from .handlers import ResourceHandler, ToolHandler, PromptHandler, SamplingHandl
 
 __all__ = [
     'MCPServer',
-    'MCPServerConfig', 
+    'MCPServerConfig',
+    'create_mcp_server_for_agent',
     'MCPProtocol',
     'MCPMessage',
     'MCPRequest',

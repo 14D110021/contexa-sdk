@@ -134,15 +134,17 @@ This document tracks the progress of implementing improvements to the Google ada
   - Full MCP method support (tools, resources, prompts, sampling)
   - Connection management and error handling
 
-### In Progress MCP Tasks
+### Completed MCP Tasks
 
 **📋 See detailed plan in: `MCP_COMPLETION_PLAN.md`**
 
-- [ ] **Sprint 1: MCP Feature Handlers** - Specialized handlers for each MCP feature (HIGH PRIORITY)
-  - ResourceHandler for resource management and subscriptions
-  - ToolHandler for tool execution and management
-  - PromptHandler for prompt templates and workflows
-  - SamplingHandler for LLM sampling requests
+- [x] **Sprint 1: MCP Feature Handlers** - Specialized handlers for each MCP feature ✅ COMPLETE
+  - [x] ResourceHandler for resource management and subscriptions
+  - [x] ToolHandler for tool execution and management
+  - [x] PromptHandler for prompt templates and workflows
+  - [x] SamplingHandler for LLM sampling requests
+
+### In Progress MCP Tasks
 - [ ] **Sprint 2: MCP Client Integration** - Seamless Contexa integration (HIGH PRIORITY)
   - MCPIntegration for automatic agent-to-MCP conversion
   - integrate_mcp_server_with_agent convenience function
