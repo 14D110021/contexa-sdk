@@ -62,11 +62,12 @@ class MCPMessage:
 @dataclass
 class MCPRequest(MCPMessage):
     """MCP request message."""
-    method: str
-    id: Union[str, int]
+    method: str = None
+    id: Union[str, int] = None
     params: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
+        super().__post_init__() if hasattr(super(), '__post_init__') else None
         if self.id is None:
             self.id = str(uuid.uuid4())
 
@@ -74,7 +75,7 @@ class MCPRequest(MCPMessage):
 @dataclass
 class MCPResponse(MCPMessage):
     """MCP response message."""
-    id: Union[str, int]
+    id: Union[str, int] = None
     result: Optional[Dict[str, Any]] = None
     error: Optional[Dict[str, Any]] = None
     
@@ -86,7 +87,7 @@ class MCPResponse(MCPMessage):
 @dataclass
 class MCPNotification(MCPMessage):
     """MCP notification message (no response expected)."""
-    method: str
+    method: str = None
     params: Optional[Dict[str, Any]] = None
 
 

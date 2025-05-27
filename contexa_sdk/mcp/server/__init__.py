@@ -18,7 +18,7 @@ from .protocol import MCPProtocol, MCPMessage, MCPRequest, MCPResponse, MCPNotif
 from .capabilities import ServerCapabilities, ResourceCapability, ToolCapability, PromptCapability
 from .transport import StdioTransport, HTTPTransport, SSETransport
 from .handlers import ResourceHandler, ToolHandler, PromptHandler, SamplingHandler
-from .security import SecurityManager, ConsentManager, AuthenticationManager
+# from .security import SecurityManager, ConsentManager, AuthenticationManager  # TODO: Implement in Sprint 4
 
 __all__ = [
     'MCPServer',
@@ -39,7 +39,7 @@ __all__ = [
     'ToolHandler',
     'PromptHandler',
     'SamplingHandler',
-    'SecurityManager',
-    'ConsentManager',
-    'AuthenticationManager',
+    # 'SecurityManager',      # TODO: Implement in Sprint 4
+    # 'ConsentManager',       # TODO: Implement in Sprint 4
+    # 'AuthenticationManager', # TODO: Implement in Sprint 4
 ] 
