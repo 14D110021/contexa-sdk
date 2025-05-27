@@ -14,18 +14,19 @@ The implementation follows the MCP specification v2025-03-26 and includes:
 """
 
 from .mcp_client import MCPClient, MCPClientConfig
-from .discovery import MCPServerDiscovery, MCPRegistry
-from .integration import MCPIntegration, integrate_mcp_server_with_agent
-from .proxy import MCPToolProxy, MCPResourceProxy, MCPPromptProxy
+from .integration import MCPIntegration, integrate_mcp_server_with_agent, create_multi_agent_mcp_server
+# from .discovery import MCPServerDiscovery, MCPRegistry  # TODO: Implement in Sprint 5
+# from .proxy import MCPToolProxy, MCPResourceProxy, MCPPromptProxy  # TODO: Implement in Sprint 3
 
 __all__ = [
     'MCPClient',
     'MCPClientConfig',
-    'MCPServerDiscovery',
-    'MCPRegistry',
     'MCPIntegration',
     'integrate_mcp_server_with_agent',
-    'MCPToolProxy',
-    'MCPResourceProxy',
-    'MCPPromptProxy',
+    'create_multi_agent_mcp_server',
+    # 'MCPServerDiscovery',  # TODO: Implement in Sprint 5
+    # 'MCPRegistry',  # TODO: Implement in Sprint 5
+    # 'MCPToolProxy',  # TODO: Implement in Sprint 3
+    # 'MCPResourceProxy',  # TODO: Implement in Sprint 3
+    # 'MCPPromptProxy',  # TODO: Implement in Sprint 3
 ] 
