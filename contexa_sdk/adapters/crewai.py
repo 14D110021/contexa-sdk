@@ -1,4 +1,40 @@
-"""CrewAI adapter for converting Contexa objects to CrewAI objects."""
+"""CrewAI adapter for converting Contexa objects to CrewAI objects.
+
+This adapter provides integration between Contexa SDK and CrewAI, converting
+Contexa tools, models, agents, and prompts to their CrewAI equivalents.
+
+The CrewAI adapter enables seamless use of Contexa SDK components within
+CrewAI workflows, agents, and crews. It handles the conversion of tool schemas,
+model configurations, and agent definitions to ensure compatibility with CrewAI's
+architecture and execution model.
+
+Key features:
+- Converting ContexaTool objects to CrewAI tool instances
+- Adapting ContexaModel configurations to CrewAI-compatible models
+- Creating CrewAI Agent instances from ContexaAgent objects
+- Converting ContexaPrompt objects to CrewAI-compatible strings
+- Supporting both individual agents and multi-agent crews
+- Handling handoffs between Contexa agents and CrewAI agents
+
+Usage:
+    from contexa_sdk.adapters import crewai
+    
+    # Convert a Contexa tool to a CrewAI tool
+    crew_tool = crewai.tool(my_contexa_tool)
+    
+    # Convert a Contexa agent to a CrewAI agent
+    crew_agent = crewai.agent(my_contexa_agent, wrap_in_crew=False)
+    
+    # Convert a Contexa agent to a CrewAI crew (with a single agent)
+    crew = crewai.agent(my_contexa_agent)
+    
+    # Run the CrewAI crew
+    result = await crew.run("What's the weather in Paris?")
+
+Requirements:
+    This adapter requires CrewAI to be installed:
+    `pip install contexa-sdk[crewai]`
+"""
 
 import inspect
 import functools
@@ -12,18 +48,68 @@ from contexa_sdk.core.model import ContexaModel, ModelMessage
 from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.prompt import ContexaPrompt
 
+# Adapter version
+__adapter_version__ = "0.1.0"
+
 
 class CrewAIAdapter(BaseAdapter):
-    """CrewAI adapter for converting Contexa objects to CrewAI objects."""
+    """CrewAI adapter for converting Contexa objects to CrewAI objects.
+    
+    This adapter implements the BaseAdapter interface for the CrewAI framework.
+    It provides methods to convert Contexa SDK core objects (tools, models, agents, 
+    and prompts) to their CrewAI equivalents, enabling seamless integration
+    between Contexa and CrewAI's multi-agent orchestration capabilities.
+    
+    The adapter handles conversion of tool schemas, model configurations, and agent
+    definitions. It can create both individual CrewAI Agent instances and full Crew
+    instances with default tasks. The adapter also supports handoffs between agents
+    and provides utilities for multi-agent collaboration.
+    
+    Attributes:
+        None
+        
+    Methods:
+        tool: Convert a Contexa tool to a CrewAI tool
+        model: Convert a Contexa model to a CrewAI agent model
+        agent: Convert a Contexa agent to a CrewAI Agent or Crew
+        prompt: Convert a Contexa prompt to a CrewAI-compatible string
+        handoff_between_crew_agents: Handle handoff between CrewAI agents
+    """
     
     def tool(self, tool: ContexaTool) -> Any:
         """Convert a Contexa tool to a CrewAI tool.
         
+        This method takes a Contexa tool and converts it to a CrewAI tool
+        that can be used with CrewAI agents and crews. It wraps the tool's
+        functionality in a CrewAI tool decorator and handles the conversion
+        between async and sync interfaces.
+        
         Args:
-            tool: The Contexa tool to convert
+            tool: The Contexa tool to convert. Can be either a ContexaTool instance
+                 or a function decorated with ContexaTool.register.
             
         Returns:
-            A CrewAI tool object
+            A CrewAI tool object that can be used with CrewAI agents.
+            
+        Raises:
+            ImportError: If CrewAI dependencies are not installed.
+            TypeError: If the input is not a valid ContexaTool instance.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.tool import ContexaTool
+            from contexa_sdk.adapters import crewai
+            
+            @ContexaTool.register(
+                name="weather",
+                description="Get weather information for a location"
+            )
+            async def get_weather(location: str) -> str:
+                return f"Weather in {location} is sunny"
+                
+            # Convert to CrewAI tool
+            crew_tool = crewai.tool(get_weather)
+            ```
         """
         try:
             from crewai.tools import tool as crewai_tool_decorator
@@ -48,8 +134,14 @@ class CrewAIAdapter(BaseAdapter):
     def model(self, model: ContexaModel) -> Any:
         """Convert a Contexa model to a CrewAI agent model.
         
+        This method adapts a Contexa model to a CrewAI model representation by
+        extracting the appropriate model identifier or creating a model callable
+        for custom providers. It handles both standard LLM providers (OpenAI, Anthropic)
+        and custom model interfaces.
+        
         Args:
-            model: The Contexa model to convert
+            model: The Contexa model to convert. This should be a ContexaModel instance
+                  with provider, model_name, and other configuration attributes.
             
         Returns:
             A dictionary containing the model configuration with keys:
@@ -57,6 +149,36 @@ class CrewAIAdapter(BaseAdapter):
             - model_name: The model name
             - config: Additional configuration
             - provider: The model provider
+            
+        Raises:
+            No specific exceptions are raised, as this method handles different
+            model providers gracefully.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import crewai
+            
+            # For a standard provider
+            model = ContexaModel(
+                provider="openai",
+                model_name="gpt-4o",
+                temperature=0.7
+            )
+                
+            # Convert to CrewAI model configuration
+            crew_model_info = crewai.model(model)
+            crew_model = crew_model_info["crewai_model"]
+            
+            # For a custom provider
+            custom_model = ContexaModel(
+                provider="custom",
+                model_name="my-custom-model"
+            )
+            
+            # This will create a callable adapter for the custom model
+            custom_crew_model_info = crewai.model(custom_model)
+            ```
         """
         # For CrewAI, we mostly just need to provide the model name
         # unless it's a local model or special case
@@ -91,12 +213,45 @@ class CrewAIAdapter(BaseAdapter):
     def agent(self, agent: ContexaAgent, wrap_in_crew: bool = True) -> Any:
         """Convert a Contexa agent to a CrewAI agent.
         
+        This method creates a CrewAI Agent from a Contexa agent, converting
+        the agent's model, tools, and configuration. By default, it also wraps
+        the agent in a CrewAI Crew with a default task, making it immediately
+        usable as a complete workflow.
+        
         Args:
-            agent: The Contexa agent to convert
-            wrap_in_crew: Whether to wrap the agent in a Crew (default: True)
+            agent: The Contexa agent to convert. Should be a ContexaAgent instance with
+                  model, tools, and other configuration attributes.
+            wrap_in_crew: Whether to wrap the agent in a Crew (default: True). When True,
+                         returns a complete CrewAI Crew. When False, returns just a CrewAI Agent.
             
         Returns:
-            A CrewAI Agent object or Crew object if wrap_in_crew is True
+            A CrewAI Agent object if wrap_in_crew is False, or a CrewAI Crew object if
+            wrap_in_crew is True. Both objects have a __contexa_agent__ attribute for 
+            reference and handoff support.
+            
+        Raises:
+            ImportError: If CrewAI dependencies are not installed.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.agent import ContexaAgent
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import crewai
+            
+            agent = ContexaAgent(
+                name="Assistant",
+                model=ContexaModel(provider="openai", model_name="gpt-4o"),
+                tools=[weather_tool, search_tool],
+                system_prompt="You are a helpful assistant."
+            )
+                
+            # Convert to CrewAI agent only
+            crew_agent = crewai.agent(agent, wrap_in_crew=False)
+            
+            # Convert to CrewAI crew
+            crew = crewai.agent(agent)
+            result = crew.run("What's the weather in Paris?")
+            ```
         """
         try:
             from crewai import Agent as CrewAgent, Task, Crew
@@ -152,11 +307,29 @@ class CrewAIAdapter(BaseAdapter):
     def prompt(self, prompt: ContexaPrompt) -> Any:
         """Convert a Contexa prompt to a format usable by CrewAI.
         
+        This method converts a Contexa prompt template to a string format that
+        can be used with CrewAI. For CrewAI, this is typically just the raw
+        template string.
+        
         Args:
-            prompt: The Contexa prompt to convert
+            prompt: The Contexa prompt to convert. Should be a ContexaPrompt instance
+                   with a template attribute.
             
         Returns:
-            A string template usable by CrewAI
+            A string template usable by CrewAI.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.prompt import ContexaPrompt
+            from contexa_sdk.adapters import crewai
+            
+            prompt = ContexaPrompt(
+                template="You are an assistant that helps with {task}."
+            )
+                
+            # Convert to CrewAI-compatible string
+            crew_prompt = crewai.prompt(prompt)
+            ```
         """
         # CrewAI typically just uses string templates
         return prompt.template

@@ -5,6 +5,21 @@ This module provides functionality to visualize agent relationships,
 tools, and handoffs using Graphviz. It helps developers understand
 the structure and flow of their multi-agent systems through visual graphs.
 
+Key features:
+- Generate visualization graphs of agent systems
+- Display agent relationships, tools, and handoffs
+- Export to various formats (PNG, SVG, PDF)
+- Support for light and dark themes
+- JSON export for web integration
+- Team visualization for multiple independent agents
+
+The visualizations help with:
+- Understanding complex multi-agent system architectures
+- Documenting agent workflows and relationships
+- Debugging agent communication patterns
+- Sharing agent designs with team members
+- Integrating agent visualizations into documentation or dashboards
+
 Usage examples:
     ```python
     # Basic visualization
@@ -27,6 +42,10 @@ Usage examples:
     from contexa_sdk.observability import export_graph_to_json
     graph_data = export_graph_to_json(my_agent, filename="agent_graph.json")
     ```
+
+Note: These visualization functions require the 'graphviz' Python package
+and the Graphviz system library to be installed. You can install the Python
+package with `pip install graphviz` or `pip install contexa-sdk[viz]`.
 """
 
 import json
@@ -45,10 +64,16 @@ def _check_graphviz_installed() -> bool:
     Check if Graphviz Python package is installed.
     
     This is an internal helper function that verifies the availability
-    of the graphviz package which is required for visualization.
+    of the graphviz package which is required for visualization. Note that
+    this only checks for the Python package - the system-level Graphviz
+    binary must also be installed for the visualization to work correctly.
     
     Returns:
-        bool: True if graphviz is installed, False otherwise.
+        bool: True if the graphviz Python package is installed, False otherwise.
+        
+    Note:
+        Even if this returns True, rendering might still fail if the system-level
+        Graphviz binaries are not installed or not in the PATH.
     """
     try:
         spec = importlib.util.find_spec("graphviz")

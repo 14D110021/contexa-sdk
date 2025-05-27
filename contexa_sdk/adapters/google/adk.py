@@ -1,17 +1,60 @@
-"""Integration with Google ADK (Agent Development Kit).
+"""Google ADK adapter for converting Contexa objects to Google Agent Development Kit objects.
 
-This module provides functionality to adapt Contexa agents to Google ADK
-and allows leveraging Google's Agent Development Kit features within Contexa SDK.
+This adapter provides integration between Contexa SDK and Google's Agent Development Kit (ADK),
+which offers advanced agent capabilities beyond simple model interaction. It converts Contexa
+tools, models, agents, and prompts to their Google ADK equivalents.
+
+The adapter supports:
+- Converting ContexaTool objects to Google ADK tool declarations
+- Adapting Contexa agent configurations to Google ADK agents
+- Creating agent wrappers that leverage Google ADK's advanced reasoning capabilities
+- Handling complex agent execution with multi-step reasoning
+- Facilitating handoffs between Contexa agents and Google ADK agents
+
+Usage:
+    from contexa_sdk.adapters.google import adk_tool, adk_agent, adk_handoff
+
+    # Convert a Contexa agent to a Google ADK agent
+    google_agent = adk_agent(my_contexa_agent)
+    
+    # Run the Google ADK agent
+    result = await google_agent.run("Perform a complex analysis on this data set")
+    
+    # Handle a handoff to an ADK agent
+    response = await adk_handoff(
+        source_agent=my_source_agent,
+        target_adk_agent=google_agent,
+        query="Continue this analysis with advanced reasoning",
+        context={"previous_results": "Initial findings..."}
+    )
+
+Requirements:
+    This adapter requires the Google ADK SDK to be installed:
+    `pip install contexa-sdk[google-adk]` or `pip install google-adk`
+
+When to use this adapter:
+    Use the ADK adapter when you need advanced agent capabilities like:
+    - Complex multi-step reasoning
+    - Sophisticated task decomposition
+    - Advanced planning capabilities
+    - Integration with Google's agent ecosystem
+    
+    For simpler model interactions with Gemini models, consider using the
+    Google GenAI adapter instead (from contexa_sdk.adapters.google import genai_*).
 """
 
-from typing import Any, Dict, List, Optional, Union, Callable
+import inspect
 import asyncio
 import json
+from typing import Any, Dict, List, Optional, Union, Callable
 import logging
 
 from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.model import ModelMessage
 from contexa_sdk.core.tool import ContexaTool
+
+# Adapter version
+__adapter_version__ = "0.1.0"
 
 # Set up logging
 logger = logging.getLogger(__name__)

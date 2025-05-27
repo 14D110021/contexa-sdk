@@ -1,4 +1,37 @@
-"""OpenAI adapter for converting Contexa objects to OpenAI Agents SDK objects."""
+"""OpenAI adapter for converting Contexa objects to OpenAI Agents SDK objects.
+
+This adapter provides integration between Contexa SDK and OpenAI's Agents SDK, converting
+Contexa tools, models, agents, and prompts to their OpenAI equivalents.
+
+The OpenAI adapter enables seamless use of Contexa SDK components with OpenAI's
+Agents SDK, including support for both the newer Agents SDK and the Assistants API.
+It handles the conversion of tool schemas, function signatures, and agent configurations
+to ensure compatibility.
+
+Key features:
+- Converting ContexaTool objects to OpenAI function_tool instances
+- Adapting ContexaModel configurations to OpenAI models
+- Creating OpenAI Agent instances from ContexaAgent objects
+- Converting ContexaPrompt objects to OpenAI-compatible strings
+- Handling handoffs between Contexa agents and OpenAI agents
+- Supporting OpenAI Assistants API integration through threads
+
+Usage:
+    from contexa_sdk.adapters import openai
+    
+    # Convert a Contexa tool to an OpenAI tool
+    oa_tool = openai.tool(my_contexa_tool)
+    
+    # Convert a Contexa agent to an OpenAI agent
+    oa_agent = openai.agent(my_contexa_agent)
+    
+    # Run the OpenAI agent
+    result = await oa_agent.execute("What's the weather in Paris?")
+
+Requirements:
+    This adapter requires OpenAI Agents SDK to be installed:
+    `pip install contexa-sdk[openai]`
+"""
 
 import inspect
 import asyncio
@@ -19,18 +52,68 @@ from contexa_sdk.adapters.openai.thread import (
     handoff_to_thread,
 )
 
+# Adapter version
+__adapter_version__ = "0.1.0"
+
 
 class OpenAIAdapter(BaseAdapter):
-    """OpenAI adapter for converting Contexa objects to OpenAI Agents SDK objects."""
+    """OpenAI adapter for converting Contexa objects to OpenAI Agents SDK objects.
+    
+    This adapter implements the BaseAdapter interface for the OpenAI Agents SDK.
+    It provides methods to convert Contexa SDK core objects (tools, models, agents, 
+    and prompts) to their OpenAI equivalents, enabling seamless integration
+    between Contexa and OpenAI's agent technologies.
+    
+    The adapter supports both the newer OpenAI Agents SDK and the Assistants API,
+    handling conversions for both approaches. It manages thread-based conversation
+    state and provides utilities for agent handoffs.
+    
+    Attributes:
+        None
+        
+    Methods:
+        tool: Convert a Contexa tool to an OpenAI function_tool
+        model: Convert a Contexa model to an OpenAI model configuration
+        agent: Convert a Contexa agent to an OpenAI Agent
+        prompt: Convert a Contexa prompt to an OpenAI-compatible string
+        handoff_to_openai_agent: Handle handoff to an OpenAI agent
+        adapt_openai_assistant: Create a Contexa agent from an OpenAI Assistant
+    """
     
     def tool(self, tool: ContexaTool) -> Any:
         """Convert a Contexa tool to an OpenAI Agents SDK tool.
         
+        This method takes a Contexa tool and converts it to an OpenAI function_tool
+        that can be used with OpenAI's Agents SDK. It wraps the tool's functionality
+        in an appropriate function_tool decorator and preserves metadata like name
+        and description.
+        
         Args:
-            tool: The Contexa tool to convert
+            tool: The Contexa tool to convert. Can be either a ContexaTool instance
+                 or a function decorated with ContexaTool.register.
             
         Returns:
-            An OpenAI Agents SDK function_tool
+            An OpenAI Agents SDK function_tool that can be used with OpenAI agents.
+            
+        Raises:
+            ImportError: If OpenAI Agents SDK dependencies are not installed.
+            TypeError: If the input is not a valid ContexaTool instance.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.tool import ContexaTool
+            from contexa_sdk.adapters import openai
+            
+            @ContexaTool.register(
+                name="weather",
+                description="Get weather information for a location"
+            )
+            async def get_weather(location: str) -> str:
+                return f"Weather in {location} is sunny"
+                
+            # Convert to OpenAI tool
+            oa_tool = openai.tool(get_weather)
+            ```
         """
         try:
             from openai_agents import function_tool
@@ -52,16 +135,42 @@ class OpenAIAdapter(BaseAdapter):
         return contexa_tool
         
     def model(self, model: ContexaModel) -> Any:
-        """Convert a Contexa model to an OpenAI model.
+        """Convert a Contexa model to an OpenAI model configuration.
+        
+        This method adapts a Contexa model to an OpenAI model configuration by
+        extracting relevant parameters and optionally creating an OpenAI client
+        if API credentials are available.
         
         Args:
-            model: The Contexa model to convert
+            model: The Contexa model to convert. This should be a ContexaModel instance
+                  with provider, model_name, and other configuration attributes.
             
         Returns:
             A dictionary containing the model configuration with keys:
+            - client: An OpenAI client instance (if API key is available)
             - model_name: The model name
             - config: Additional configuration
             - provider: The model provider
+            
+        Raises:
+            No specific exceptions are raised, as this method is designed to
+            gracefully handle missing dependencies.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import openai
+            
+            model = ContexaModel(
+                provider="openai",
+                model_name="gpt-4o",
+                temperature=0.7,
+                config={"api_key": "your-api-key"}
+            )
+                
+            # Convert to OpenAI model configuration
+            oa_model_info = openai.model(model)
+            ```
         """
         # For OpenAI Agents SDK, we'll provide a standardized model info dictionary
         try:
@@ -88,11 +197,39 @@ class OpenAIAdapter(BaseAdapter):
     def agent(self, agent: ContexaAgent) -> Any:
         """Convert a Contexa agent to an OpenAI Agents SDK agent.
         
+        This method creates an OpenAI Agent from a Contexa agent, converting
+        the agent's tools, model configuration, and instructions. It also sets up
+        thread-based conversation management for the agent.
+        
         Args:
-            agent: The Contexa agent to convert
+            agent: The Contexa agent to convert. Should be a ContexaAgent instance with
+                  model, tools, and other configuration attributes.
             
         Returns:
-            An OpenAI Agents SDK Agent object
+            An OpenAI Agents SDK Agent object that can be used to run queries and tasks.
+            The agent has __contexa_agent__ and __thread_id__ attributes for reference
+            and state management.
+            
+        Raises:
+            ImportError: If OpenAI Agents SDK dependencies are not installed.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.agent import ContexaAgent
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import openai
+            
+            agent = ContexaAgent(
+                name="Assistant",
+                model=ContexaModel(provider="openai", model_name="gpt-4o"),
+                tools=[weather_tool, search_tool],
+                system_prompt="You are a helpful assistant."
+            )
+                
+            # Convert to OpenAI agent
+            oa_agent = openai.agent(agent)
+            result = await oa_agent.execute("What's the weather in Paris?")
+            ```
         """
         try:
             from openai_agents import Agent
@@ -128,11 +265,29 @@ class OpenAIAdapter(BaseAdapter):
     def prompt(self, prompt: ContexaPrompt) -> Any:
         """Convert a Contexa prompt to a format usable by OpenAI Agents SDK.
         
+        This method converts a Contexa prompt template to a string format that
+        can be used with OpenAI Agents SDK. For OpenAI, this is typically just
+        the raw template string.
+        
         Args:
-            prompt: The Contexa prompt to convert
+            prompt: The Contexa prompt to convert. Should be a ContexaPrompt instance
+                   with a template attribute.
             
         Returns:
-            A string template usable by OpenAI Agents SDK
+            A string template usable by OpenAI Agents SDK.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.prompt import ContexaPrompt
+            from contexa_sdk.adapters import openai
+            
+            prompt = ContexaPrompt(
+                template="You are an assistant that helps with {task}."
+            )
+                
+            # Convert to OpenAI-compatible string
+            oa_prompt = openai.prompt(prompt)
+            ```
         """
         # OpenAI Agents SDK typically just uses string templates
         return prompt.template

@@ -1,0 +1,358 @@
+name: Release Automation
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.2.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Run full test suite
+      run: |
+        pytest tests/ -v --tb=short
+    
+    - name: Validate version consistency
+      run: |
+        python -c "
+        import re
+        import sys
+        
+        # Check version in setup.py
+        with open('setup.py', 'r') as f:
+            setup_content = f.read()
+            version_match = re.search(r'version=[\"\'](.*?)[\"\']', setup_content)
+            if version_match:
+                setup_version = version_match.group(1)
+                print(f'Setup.py version: {setup_version}')
+            else:
+                print('Could not find version in setup.py')
+                sys.exit(1)
+        
+        # Check version in __init__.py
+        try:
+            with open('contexa_sdk/__init__.py', 'r') as f:
+                init_content = f.read()
+                version_match = re.search(r'__version__ = [\"\'](.*?)[\"\']', init_content)
+                if version_match:
+                    init_version = version_match.group(1)
+                    print(f'__init__.py version: {init_version}')
+                    
+                    if setup_version != init_version:
+                        print(f'Version mismatch: setup.py={setup_version}, __init__.py={init_version}')
+                        sys.exit(1)
+                else:
+                    print('Could not find version in __init__.py')
+        except FileNotFoundError:
+            print('__init__.py not found, skipping version check')
+        
+        print('✓ Version consistency validated')
+        "
+    
+    - name: Check changelog
+      run: |
+        python -c "
+        import sys
+        import re
+        
+        try:
+            with open('CHANGELOG.md', 'r') as f:
+                changelog = f.read()
+            
+            # Check if there's an unreleased section
+            if '[Unreleased]' in changelog:
+                print('✓ Changelog contains unreleased section')
+            else:
+                print('⚠ No unreleased section found in changelog')
+            
+            # Check for recent entries
+            lines = changelog.split('\n')
+            recent_changes = False
+            for line in lines[:50]:  # Check first 50 lines
+                if line.strip().startswith('- '):
+                    recent_changes = True
+                    break
+            
+            if recent_changes:
+                print('✓ Recent changes found in changelog')
+            else:
+                print('⚠ No recent changes found in changelog')
+                
+        except FileNotFoundError:
+            print('⚠ CHANGELOG.md not found')
+        "
+
+  build-package:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine wheel setuptools
+    
+    - name: Build package
+      run: |
+        python -m build
+    
+    - name: Check package
+      run: |
+        twine check dist/*
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist
+        path: dist/
+
+  test-package:
+    needs: build-package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, '3.10', '3.11']
+    
+    steps:
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Install package from wheel
+      run: |
+        python -m pip install --upgrade pip
+        pip install dist/*.whl
+    
+    - name: Test installation
+      run: |
+        python -c "
+        import contexa_sdk
+        print(f'Contexa SDK version: {contexa_sdk.__version__}')
+        
+        # Test basic imports
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        
+        print('✓ Core imports successful')
+        
+        # Test adapter imports (with error handling)
+        try:
+            from contexa_sdk.adapters import langchain
+            print('✓ LangChain adapter available')
+        except ImportError:
+            print('- LangChain adapter not available (dependencies not installed)')
+        
+        try:
+            from contexa_sdk.adapters import crewai
+            print('✓ CrewAI adapter available')
+        except ImportError:
+            print('- CrewAI adapter not available (dependencies not installed)')
+        
+        try:
+            from contexa_sdk.adapters import openai
+            print('✓ OpenAI adapter available')
+        except ImportError:
+            print('- OpenAI adapter not available (dependencies not installed)')
+        
+        try:
+            from contexa_sdk.adapters.google import genai_agent, adk_agent
+            print('✓ Google adapters available')
+        except ImportError:
+            print('- Google adapters not available (dependencies not installed)')
+        
+        print('✓ Package installation test passed')
+        "
+
+  create-release:
+    needs: [validate-release, test-package]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Extract release notes
+      run: |
+        python -c "
+        import re
+        import sys
+        
+        try:
+            with open('CHANGELOG.md', 'r') as f:
+                changelog = f.read()
+            
+            # Extract the latest version's changes
+            lines = changelog.split('\n')
+            release_notes = []
+            in_unreleased = False
+            in_version = False
+            
+            for line in lines:
+                if line.startswith('## [Unreleased]'):
+                    in_unreleased = True
+                    continue
+                elif line.startswith('## [') and in_unreleased:
+                    in_version = True
+                    in_unreleased = False
+                    continue
+                elif line.startswith('## [') and in_version:
+                    break
+                elif in_unreleased or in_version:
+                    release_notes.append(line)
+            
+            # Write release notes to file
+            with open('release_notes.md', 'w') as f:
+                f.write('\n'.join(release_notes).strip())
+            
+            print('✓ Release notes extracted')
+            
+        except Exception as e:
+            print(f'Error extracting release notes: {e}')
+            with open('release_notes.md', 'w') as f:
+                f.write('Release notes not available.')
+        "
+    
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: ${{ github.event.inputs.prerelease || false }}
+    
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: dist/
+        asset_name: contexa-sdk-dist
+        asset_content_type: application/zip
+
+  publish-pypi:
+    needs: [validate-release, test-package]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        packages_dir: dist/
+
+  update-documentation:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install sphinx sphinx_rtd_theme
+    
+    - name: Build documentation
+      run: |
+        mkdir -p docs
+        cd docs
+        
+        # Initialize Sphinx if not already done
+        if [ ! -f "conf.py" ]; then
+          sphinx-quickstart -q -p "Contexa SDK" -a "Contexa Team" -v "${{ github.ref_name }}" --ext-autodoc --ext-viewcode --makefile --no-batchfile .
+        fi
+        
+        # Update version in conf.py
+        sed -i "s/version = .*/version = '${{ github.ref_name }}'/" conf.py
+        sed -i "s/release = .*/release = '${{ github.ref_name }}'/" conf.py
+        
+        # Build documentation
+        make html
+    
+    - name: Deploy documentation
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/_build/html
+        tag_name: docs-${{ github.ref_name }}
+        tag_message: 'Documentation for ${{ github.ref_name }}'
+
+  notify-release:
+    needs: [create-release, publish-pypi, update-documentation]
+    runs-on: ubuntu-latest
+    if: always() && (needs.create-release.result == 'success' || needs.publish-pypi.result == 'success')
+    
+    steps:
+    - name: Notify release completion
+      run: |
+        echo "🎉 Release ${{ github.ref_name }} completed successfully!"
+        echo "📦 Package published to PyPI"
+        echo "📚 Documentation updated"
+        echo "🏷️ GitHub release created" 

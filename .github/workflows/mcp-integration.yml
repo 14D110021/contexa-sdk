@@ -1,0 +1,374 @@
+name: MCP Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'contexa_sdk/deployment/mcp_generator.py'
+      - 'contexa_sdk/deployment/builder.py'
+      - 'contexa_sdk/deployment/deployer.py'
+      - 'tests/integration/test_mcp_*.py'
+      - 'examples/mcp_*.py'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'contexa_sdk/deployment/mcp_generator.py'
+      - 'contexa_sdk/deployment/builder.py'
+      - 'contexa_sdk/deployment/deployer.py'
+      - 'tests/integration/test_mcp_*.py'
+      - 'examples/mcp_*.py'
+
+jobs:
+  mcp-code-generation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Test MCP code generation
+      run: |
+        python -c "
+        from contexa_sdk.deployment.mcp_generator import (
+            generate_mcp_app_py,
+            generate_mcp_requirements_txt,
+            generate_mcp_dockerfile,
+            generate_mcp_openapi_spec
+        )
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        # Create a test agent
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='test_tool', description='A test tool')
+        async def test_tool(inp: TestInput) -> str:
+            return f'Result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='Test Agent',
+            description='A test agent for MCP generation',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[test_tool.__contexa_tool__]
+        )
+        
+        # Test code generation
+        agent_dict = agent.to_dict()
+        tools_config = [tool.to_dict() for tool in agent.tools]
+        
+        # Generate MCP components
+        app_code = generate_mcp_app_py(agent_dict, tools_config, '1.0')
+        requirements = generate_mcp_requirements_txt('1.0')
+        dockerfile = generate_mcp_dockerfile()
+        openapi_spec = generate_mcp_openapi_spec(agent_dict, tools_config, '1.0')
+        
+        print('✓ MCP app.py generated successfully')
+        print('✓ MCP requirements.txt generated successfully')
+        print('✓ MCP Dockerfile generated successfully')
+        print('✓ MCP OpenAPI spec generated successfully')
+        
+        # Validate generated content
+        assert 'FastAPI' in app_code
+        assert 'uvicorn' in requirements
+        assert 'FROM python:' in dockerfile
+        assert 'openapi' in openapi_spec
+        assert openapi_spec['info']['x-mcp-version'] == '1.0'
+        
+        print('✓ All MCP generation tests passed')
+        "
+
+  mcp-build-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Test MCP agent building
+      run: |
+        python -c "
+        import tempfile
+        import os
+        import tarfile
+        import json
+        from contexa_sdk.deployment.builder import build_agent
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        # Create a test agent
+        class SearchInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='search_tool', description='Search tool')
+        async def search_tool(inp: SearchInput) -> str:
+            return f'Search result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='MCP Test Agent',
+            description='An agent for testing MCP builds',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[search_tool.__contexa_tool__]
+        )
+        
+        # Test regular build
+        with tempfile.TemporaryDirectory() as temp_dir:
+            regular_path = build_agent(
+                agent=agent,
+                output_dir=temp_dir,
+                version='1.0.0',
+                mcp_compatible=False
+            )
+            print(f'✓ Regular agent build: {os.path.basename(regular_path)}')
+            
+            # Verify regular build contents
+            with tarfile.open(regular_path, 'r:gz') as tar:
+                names = tar.getnames()
+                assert 'agent_config.json' in names
+                assert 'tools_config.json' in names
+                print('✓ Regular build contains expected files')
+        
+        # Test MCP build
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mcp_path = build_agent(
+                agent=agent,
+                output_dir=temp_dir,
+                version='1.0.0',
+                mcp_compatible=True,
+                mcp_version='1.0'
+            )
+            print(f'✓ MCP agent build: {os.path.basename(mcp_path)}')
+            
+            # Verify MCP build contents
+            with tarfile.open(mcp_path, 'r:gz') as tar:
+                names = tar.getnames()
+                assert 'app.py' in names
+                assert 'requirements.txt' in names
+                assert 'Dockerfile' in names
+                assert 'openapi.json' in names
+                assert 'README.md' in names
+                print('✓ MCP build contains expected files')
+                
+                # Extract and verify app.py content
+                app_py = tar.extractfile('app.py').read().decode('utf-8')
+                assert 'FastAPI' in app_py
+                assert 'MCP Test Agent' in app_py
+                print('✓ MCP app.py contains expected content')
+        
+        print('✓ All MCP build tests passed')
+        "
+
+  mcp-deployment-simulation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Test MCP deployment simulation
+      run: |
+        python -c "
+        import tempfile
+        import os
+        from contexa_sdk.deployment.builder import build_agent
+        from contexa_sdk.deployment.deployer import deploy_agent, list_mcp_agents
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from contexa_sdk.core.config import ContexaConfig
+        from pydantic import BaseModel
+        
+        # Create a test agent
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='test_tool', description='Test tool')
+        async def test_tool(inp: TestInput) -> str:
+            return f'Test result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='MCP Deploy Test',
+            description='Agent for testing MCP deployment',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[test_tool.__contexa_tool__]
+        )
+        
+        # Build MCP agent
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mcp_path = build_agent(
+                agent=agent,
+                output_dir=temp_dir,
+                version='1.0.0',
+                mcp_compatible=True
+            )
+            print(f'✓ Built MCP agent: {os.path.basename(mcp_path)}')
+            
+            # Test deployment simulation
+            config = ContexaConfig(
+                api_key='test-key',
+                org_id='test-org'
+            )
+            
+            deployment_info = deploy_agent(mcp_path, config=config)
+            print(f'✓ Deployed MCP agent: {deployment_info[\"endpoint_id\"]}')
+            
+            # Verify MCP-specific deployment info
+            assert deployment_info.get('is_mcp_agent') == True
+            assert 'mcp_endpoint' in deployment_info
+            assert 'mcp_version' in deployment_info
+            print('✓ MCP deployment info contains expected fields')
+            
+            # Test MCP agent listing
+            mcp_agents = list_mcp_agents()
+            assert len(mcp_agents) > 0
+            assert any(agent['endpoint_id'] == deployment_info['endpoint_id'] for agent in mcp_agents)
+            print('✓ MCP agent appears in MCP agent list')
+        
+        print('✓ All MCP deployment tests passed')
+        "
+
+  mcp-integration-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Run MCP integration tests
+      run: |
+        # Run any existing MCP integration tests
+        if [ -f "tests/integration/test_mcp_integration.py" ]; then
+          pytest tests/integration/test_mcp_integration.py -v
+        else
+          echo "No MCP integration tests found, skipping"
+        fi
+    
+    - name: Test MCP examples
+      run: |
+        # Test MCP examples if they exist
+        if [ -f "examples/mcp_agent_example.py" ]; then
+          python examples/mcp_agent_example.py
+        else
+          echo "No MCP examples found, skipping"
+        fi
+
+  mcp-docker-build-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+    
+    - name: Test MCP Docker build
+      run: |
+        python -c "
+        import tempfile
+        import os
+        import tarfile
+        from contexa_sdk.deployment.builder import build_agent
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        # Create a test agent
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='docker_test_tool', description='Docker test tool')
+        async def docker_test_tool(inp: TestInput) -> str:
+            return f'Docker test result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='Docker Test Agent',
+            description='Agent for testing Docker builds',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[docker_test_tool.__contexa_tool__]
+        )
+        
+        # Build MCP agent
+        with tempfile.TemporaryDirectory() as temp_dir:
+            mcp_path = build_agent(
+                agent=agent,
+                output_dir=temp_dir,
+                version='1.0.0',
+                mcp_compatible=True
+            )
+            
+            # Extract and test Dockerfile
+            extract_dir = os.path.join(temp_dir, 'extracted')
+            os.makedirs(extract_dir)
+            
+            with tarfile.open(mcp_path, 'r:gz') as tar:
+                tar.extractall(extract_dir)
+            
+            dockerfile_path = os.path.join(extract_dir, 'Dockerfile')
+            assert os.path.exists(dockerfile_path)
+            
+            with open(dockerfile_path, 'r') as f:
+                dockerfile_content = f.read()
+            
+            # Verify Dockerfile content
+            assert 'FROM python:' in dockerfile_content
+            assert 'WORKDIR /app' in dockerfile_content
+            assert 'COPY requirements.txt' in dockerfile_content
+            assert 'pip install' in dockerfile_content
+            assert 'EXPOSE 8000' in dockerfile_content
+            assert 'uvicorn' in dockerfile_content
+            
+            print('✓ Dockerfile generated with correct content')
+            print('✓ MCP Docker build test passed')
+        " 

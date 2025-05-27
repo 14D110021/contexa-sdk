@@ -1,4 +1,19 @@
-"""Deployer module for deploying Contexa agents to Contexa Cloud."""
+"""Deployer module for deploying Contexa agents to Contexa Cloud.
+
+This module provides functionality for deploying packaged Contexa agents to
+the Contexa Cloud platform. It handles:
+
+- Uploading agent packages to the deployment service
+- Registering MCP-compatible agents in the MCP registry
+- Tracking deployment information locally
+- Retrieving information about existing deployments
+
+The deployment process creates endpoints that can be accessed via the Contexa API
+or directly through MCP-compatible interfaces for MCP agents.
+
+Note: Some functionality in this module currently simulates interactions with
+the Contexa Cloud platform, as the actual platform is still under development.
+"""
 
 import os
 import json
@@ -18,13 +33,68 @@ def deploy_agent(
 ) -> Dict[str, Any]:
     """Deploy an agent to Contexa Cloud.
     
+    This function takes a packaged agent artifact (created with the builder module)
+    and deploys it to the Contexa Cloud platform. The deployment process:
+    
+    1. Verifies the agent package exists
+    2. Calculates a checksum to ensure integrity
+    3. Uploads the artifact to Contexa Cloud
+    4. Registers the agent in the MCP registry if requested or if MCP-compatible
+    5. Records deployment information locally
+    
+    After deployment, the agent will be accessible via an endpoint URL provided
+    in the returned deployment information.
+    
     Args:
-        agent_path: Path to the built agent artifact (.tar.gz)
-        config: Configuration for the deployment
-        register_as_mcp: Whether to register the agent as an MCP server in the registry
+        agent_path: Path to the built agent artifact (.tar.gz) created by the
+            builder module. This should be a full path to the artifact file.
+        config: Configuration for the deployment containing API credentials, org ID,
+            and other settings. If None, a default configuration will be used.
+        register_as_mcp: Whether to explicitly register the agent as an MCP server
+            in the registry. MCP-compatible agents are automatically registered
+            regardless of this setting.
         
     Returns:
-        Deployment information including the endpoint URL
+        A dictionary containing deployment information including:
+        - endpoint_url: URL where the deployed agent can be accessed
+        - endpoint_id: Unique identifier for the endpoint
+        - version: Version of the deployed agent
+        - status: Deployment status
+        - created_at: Timestamp of deployment
+        - Additional MCP-specific information for MCP agents
+        
+    Raises:
+        FileNotFoundError: If the specified agent artifact file is not found
+        
+    Example:
+        ```python
+        from contexa_sdk.deployment import deploy_agent
+        from contexa_sdk.core.config import ContexaConfig
+        
+        # Create a configuration with API credentials
+        config = ContexaConfig(
+            api_key="your_api_key",
+            org_id="your_organization_id"
+        )
+        
+        # Deploy an agent package
+        deployment_info = deploy_agent(
+            agent_path="./dist/search_agent_1.0.0.tar.gz",
+            config=config
+        )
+        
+        # Print the endpoint URL
+        print(f"Agent deployed to: {deployment_info['endpoint_url']}")
+        
+        # Deploy an MCP-compatible agent
+        mcp_deployment = deploy_agent(
+            agent_path="./dist/search_agent_mcp_1.0_1.0.0.tar.gz",
+            config=config
+        )
+        
+        # Print the MCP endpoint
+        print(f"MCP endpoint: {mcp_deployment['mcp_endpoint']}")
+        ```
     """
     config = config or ContexaConfig()
     
@@ -68,16 +138,27 @@ def _upload_artifact(
     config: ContexaConfig,
     is_mcp_agent: bool = False,
 ) -> Dict[str, Any]:
-    """Upload an artifact to Contexa Cloud.
+    """Upload an agent artifact to Contexa Cloud.
+    
+    This internal function handles the actual upload of the agent artifact to
+    the Contexa Cloud platform. It communicates with the deployment API to:
+    1. Get a secure upload URL
+    2. Upload the artifact
+    3. Initiate the deployment process
     
     Args:
-        artifact_path: Path to the artifact to upload
-        checksum: SHA-256 checksum of the artifact
-        config: Configuration for the upload
-        is_mcp_agent: Whether the artifact is an MCP-compatible agent
+        artifact_path: Full path to the agent artifact file to upload
+        checksum: SHA-256 checksum of the artifact for integrity verification
+        config: Configuration containing API credentials and organization ID
+        is_mcp_agent: Boolean flag indicating if this is an MCP-compatible agent
         
     Returns:
-        Deployment information including the endpoint URL
+        A dictionary containing deployment information including endpoint URLs
+        and deployment status
+        
+    Note:
+        This function currently simulates the upload process as the actual
+        Contexa Cloud platform is still under development.
     """
     import httpx
     
@@ -145,9 +226,22 @@ def _register_in_mcp_registry(
 ) -> None:
     """Register an agent in the MCP registry.
     
+    This internal function handles registering an MCP-compatible agent in the
+    Machine Communication Protocol (MCP) registry. Registration makes the agent
+    discoverable by other MCP-compatible systems.
+    
+    The registration process includes:
+    1. Extracting the OpenAPI spec from the deployed agent
+    2. Extracting MCP metadata
+    3. Registering the agent with appropriate tags and metadata
+    
     Args:
-        deployment_info: Deployment information for the agent
-        config: Configuration for the registration
+        deployment_info: Dictionary containing deployment information for the agent
+        config: Configuration containing API credentials and organization ID
+        
+    Note:
+        This function currently simulates the registration process as the actual
+        MCP registry is still under development.
     """
     # This is a simulation - in a real implementation, this would
     # make a request to the MCP registry service to register the agent
@@ -167,10 +261,14 @@ def _register_in_mcp_registry(
     
 
 def _write_deployment_info(deployment_info: Dict[str, Any]) -> None:
-    """Write deployment info to .ctx/deployments directory.
+    """Write deployment information to local storage.
+    
+    This internal function saves deployment information to the local filesystem
+    in a .ctx/deployments directory. This information can be later retrieved
+    using the list_deployments() and get_deployment() functions.
     
     Args:
-        deployment_info: Deployment information to write
+        deployment_info: Dictionary containing deployment information to save
     """
     # Create the deployments directory if it doesn't exist
     deployments_dir = os.path.join(os.getcwd(), ".ctx", "deployments")
@@ -198,13 +296,38 @@ def _write_deployment_info(deployment_info: Dict[str, Any]) -> None:
 
 
 def list_deployments(mcp_only: bool = False) -> List[Dict[str, Any]]:
-    """List all deployments.
+    """List all agent deployments from local storage.
+    
+    This function retrieves information about all previously deployed agents
+    from the local .ctx/deployments directory. It can optionally filter to
+    show only MCP-compatible agent deployments.
     
     Args:
-        mcp_only: Whether to only list MCP-compatible deployments
+        mcp_only: If True, only returns information about MCP-compatible agent
+            deployments. If False (default), returns information about all
+            deployments.
         
     Returns:
-        List of deployment information dictionaries
+        A list of dictionaries, each containing deployment information for
+        a previously deployed agent.
+        
+    Example:
+        ```python
+        from contexa_sdk.deployment import list_deployments
+        
+        # List all deployments
+        all_deployments = list_deployments()
+        for deployment in all_deployments:
+            print(f"Agent: {deployment['endpoint_id']}")
+            print(f"  URL: {deployment['endpoint_url']}")
+            print(f"  Status: {deployment['status']}")
+            
+        # List only MCP-compatible deployments
+        mcp_deployments = list_deployments(mcp_only=True)
+        for deployment in mcp_deployments:
+            print(f"MCP Agent: {deployment['endpoint_id']}")
+            print(f"  MCP Endpoint: {deployment['mcp_endpoint']}")
+        ```
     """
     deployments_dir = os.path.join(os.getcwd(), ".ctx", "deployments")
     if not os.path.exists(deployments_dir):
@@ -226,20 +349,57 @@ def list_deployments(mcp_only: bool = False) -> List[Dict[str, Any]]:
 def list_mcp_agents() -> List[Dict[str, Any]]:
     """List all MCP-compatible agent deployments.
     
+    This function is a convenience wrapper around list_deployments(mcp_only=True)
+    that returns information only about MCP-compatible agent deployments.
+    
     Returns:
-        List of MCP agent deployment information dictionaries
+        A list of dictionaries, each containing deployment information for
+        a previously deployed MCP-compatible agent.
+        
+    Example:
+        ```python
+        from contexa_sdk.deployment import list_mcp_agents
+        
+        # List all MCP-compatible deployments
+        mcp_agents = list_mcp_agents()
+        for agent in mcp_agents:
+            print(f"MCP Agent: {agent['endpoint_id']}")
+            print(f"  Version: {agent['mcp_version']}")
+            print(f"  Endpoint: {agent['mcp_endpoint']}")
+        ```
     """
     return list_deployments(mcp_only=True)
 
 
 def get_deployment(endpoint_id: str) -> Optional[Dict[str, Any]]:
-    """Get deployment information for an endpoint.
+    """Get deployment information for a specific endpoint.
+    
+    This function retrieves deployment information for a specific endpoint ID
+    from the local .ctx/deployments directory.
     
     Args:
-        endpoint_id: Endpoint ID to get information for
+        endpoint_id: The endpoint ID to retrieve information for. This should
+            be in the format "ctx://org_id/endpoint_name" or similar.
         
     Returns:
-        Deployment information or None if not found
+        A dictionary containing deployment information, or None if the specified
+        endpoint ID is not found.
+        
+    Example:
+        ```python
+        from contexa_sdk.deployment import get_deployment
+        
+        # Get information about a specific deployment
+        deployment = get_deployment("ctx://my_org/search_agent_1.0.0")
+        
+        if deployment:
+            print(f"Agent: {deployment['endpoint_id']}")
+            print(f"  URL: {deployment['endpoint_url']}")
+            print(f"  Status: {deployment['status']}")
+            print(f"  Created: {deployment['created_at']}")
+        else:
+            print("Deployment not found")
+        ```
     """
     deployments_dir = os.path.join(os.getcwd(), ".ctx", "deployments")
     if not os.path.exists(deployments_dir):

@@ -41,15 +41,48 @@ from contexa_sdk.runtime.state_management import (
 class LocalAgentRuntime(AgentRuntime):
     """Local implementation of the Agent Runtime interface.
     
-    This runtime manages agents running locally in the same process.
-    It provides resource tracking, state persistence, and health monitoring.
+    This runtime manages agents running locally in the same process or machine.
+    It provides comprehensive agent lifecycle management including:
+    
+    - Resource tracking and limitation
+    - State persistence and recovery
+    - Health monitoring and automated recovery
+    - Concurrent agent execution
+    - Agent pause/resume functionality
+    
+    The LocalAgentRuntime is designed for development, testing, and production
+    deployments where all agents run on a single machine. It automatically
+    handles background tasks like health monitoring and state persistence
+    while providing a clean API for agent management.
+    
+    Attributes:
+        _config: Configuration settings for the runtime
+        _status: Current operational status of the runtime
+        _agents: Dictionary mapping agent IDs to agent instances
+        _agent_tasks: Dictionary mapping agent IDs to running tasks
+        _agent_status: Dictionary mapping agent IDs to agent status values
+        _state_provider: Provider for agent state persistence
+        _resource_tracker: Tracker for agent resource usage
+        _health_monitor: Monitor for agent health status
     """
     
     def __init__(self, config: Optional[AgentRuntimeConfig] = None):
         """Initialize a local agent runtime.
         
+        Sets up the runtime with the provided configuration or default settings.
+        Initializes supporting components like the state provider, resource tracker,
+        and health monitor. The runtime is not started until the start() method
+        is called.
+        
         Args:
-            config: Runtime configuration. If None, default configuration is used.
+            config: Runtime configuration with settings for max agents, resource limits,
+                state persistence, and health monitoring. If None, default configuration
+                is used with in-memory state persistence.
+                
+        Note:
+            This constructor only initializes the runtime structures but doesn't
+            start background tasks or load agent state. Call start() to fully
+            initialize the runtime.
         """
         self._config = config or AgentRuntimeConfig()
         self._status = AgentRuntimeStatus.INITIALIZING
@@ -357,15 +390,43 @@ class LocalAgentRuntime(AgentRuntime):
         query: str, 
         context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Run an agent with a query.
+        """Run an agent with a query and return its response.
+        
+        Executes the specified agent with the given query and optional context.
+        This method handles resource tracking, status updates, response time
+        measurement, and token usage estimation. It's the primary method for
+        interacting with agents managed by this runtime.
+        
+        The method performs the following steps:
+        1. Validates runtime and agent state
+        2. Updates agent status to RUNNING
+        3. Tracks request start time and resource usage
+        4. Executes the agent with the query
+        5. Records response time and estimated token usage
+        6. Updates agent status to READY
+        7. Returns the agent's response
         
         Args:
-            agent_id: ID of the agent to run
-            query: Query to pass to the agent
-            context: Optional context information for the agent
+            agent_id: Unique identifier of the agent to run. Must be a registered agent.
+            query: The text query or instruction to send to the agent.
+            context: Optional dictionary containing additional context information
+                for the agent. This can include conversation history, user information,
+                or any other data needed by the agent. Defaults to an empty dict.
         
         Returns:
-            The agent's response
+            The text response from the agent.
+        
+        Raises:
+            RuntimeError: If the runtime is not initialized or not in RUNNING state.
+            ValueError: If the agent with the given ID is not registered.
+            Exception: Any exception raised by the agent during execution is
+                propagated after logging and status updates.
+        
+        Note:
+            This method automatically tracks resource usage and response times,
+            which are used by health monitoring to detect issues with agents.
+            Token usage is currently estimated based on response length, but
+            more accurate tracking could be implemented in ContexaAgent.
         """
         if not self._initialized:
             raise RuntimeError("Runtime not initialized")

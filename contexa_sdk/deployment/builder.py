@@ -1,4 +1,19 @@
-"""Builder module for building and packaging Contexa agents."""
+"""Builder module for building and packaging Contexa agents.
+
+This module provides functions for packaging Contexa agents into deployable
+artifacts. It supports creating both standard agent packages and MCP-compatible
+agent servers that can be deployed as standalone services.
+
+The builder handles:
+- Serializing agent configurations and tools
+- Packaging memory state (optional)
+- Generating MCP-compatible server code
+- Creating deployment artifacts (tarballs)
+- Generating Docker configurations for containerized deployment
+
+The build process preserves all necessary information to restore and run
+the agent in various deployment environments.
+"""
 
 import os
 import json
@@ -27,19 +42,66 @@ def build_agent(
     mcp_compatible: bool = False,
     mcp_version: str = "1.0",
 ) -> str:
-    """Build and package a Contexa agent.
+    """Build and package a Contexa agent into a deployable artifact.
+    
+    This function is the main entry point for building agent packages. It handles
+    serializing the agent configuration, tools, and optionally memory state into
+    a deployable package. Two types of builds are supported:
+    
+    1. Standard agent package: A tarball containing agent configuration, tool configurations,
+       and optionally memory state.
+    2. MCP-compatible agent server: A complete server application package that can be
+       deployed as a standalone service, including server code, Docker configuration,
+       and OpenAPI specifications.
     
     Args:
-        agent: The agent to build
-        output_dir: Directory to output the built agent
-        version: Version of the agent
-        include_tools: Whether to include tools in the build
-        include_memory: Whether to include memory in the build
-        mcp_compatible: Whether to build an MCP-compatible agent server
-        mcp_version: Version of MCP to use
+        agent: The ContexaAgent instance to build and package
+        output_dir: Directory to output the built agent artifact. Will be created
+            if it doesn't exist.
+        version: Semantic version string for the agent package (e.g., "0.1.0")
+        include_tools: Whether to include the agent's tools in the build. When True,
+            tools are serialized and included in the package.
+        include_memory: Whether to include the agent's memory state in the build.
+            This preserves conversation history and other stateful information.
+        mcp_compatible: When True, builds an MCP-compatible agent server that can
+            be deployed as a standalone service following the Machine Communication
+            Protocol (MCP) standard.
+        mcp_version: Version of the MCP standard to comply with. Only used when
+            mcp_compatible is True.
         
     Returns:
-        Path to the built agent artifact
+        Path to the built agent artifact (tarball file)
+        
+    Examples:
+        ```python
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.deployment.builder import build_agent
+        
+        # Create an agent
+        agent = ContexaAgent(
+            name="Search Agent",
+            description="Agent for performing web searches",
+            tools=[search_tool, summarize_tool]
+        )
+        
+        # Build a standard agent package
+        package_path = build_agent(
+            agent=agent,
+            version="1.0.0",
+            output_dir="./dist"
+        )
+        print(f"Agent package built at {package_path}")
+        
+        # Build an MCP-compatible agent server
+        server_path = build_agent(
+            agent=agent,
+            version="1.0.0",
+            output_dir="./dist",
+            mcp_compatible=True,
+            mcp_version="1.0"
+        )
+        print(f"MCP server package built at {server_path}")
+        ```
     """
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -83,17 +145,51 @@ def build_mcp_agent_server(
     version: str = "0.1.0",
     mcp_version: str = "1.0",
 ) -> str:
-    """Build an MCP-compatible agent server.
+    """Build an MCP-compatible agent server package.
+    
+    This function generates a complete server application package that implements
+    the Machine Communication Protocol (MCP) standard, allowing the agent to be
+    deployed as a standalone service with a standardized API. The package includes:
+    
+    - Server application code (app.py)
+    - Dependencies list (requirements.txt)
+    - Docker configuration (Dockerfile)
+    - OpenAPI specification (openapi.json)
+    - Agent and tool configurations
+    - Documentation (README.md)
+    
+    The resulting package can be deployed as a Docker container or as a standalone
+    Python application.
     
     Args:
-        agent_dict: Dictionary representation of the agent
-        tools_config: List of tool configurations
-        output_dir: Directory to output the built agent
-        version: Version of the agent
-        mcp_version: Version of MCP to use
+        agent_dict: Dictionary representation of the agent configuration
+        tools_config: List of dictionaries containing tool configurations
+        output_dir: Directory to output the built artifact
+        version: Semantic version string for the agent package (e.g., "0.1.0")
+        mcp_version: Version of the MCP standard to comply with. Different versions
+            may generate different server code and API specifications.
         
     Returns:
-        Path to the built agent artifact
+        Path to the built MCP server package (tarball file)
+        
+    Example:
+        ```python
+        # Convert agent to dictionary format
+        agent_dict = my_agent.to_dict()
+        
+        # Extract tool configurations
+        tools_config = [tool.to_dict() for tool in my_agent.tools]
+        
+        # Build MCP server package
+        server_path = build_mcp_agent_server(
+            agent_dict=agent_dict,
+            tools_config=tools_config,
+            output_dir="./dist",
+            version="1.0.0",
+            mcp_version="1.0"
+        )
+        print(f"MCP server package built at {server_path}")
+        ```
     """
     # Create a temporary directory for the build
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -184,17 +280,33 @@ def _build_regular_agent_package(
     version: str = "0.1.0",
     include_memory: bool = True,
 ) -> str:
-    """Build a regular agent package.
+    """Build a regular (non-MCP) agent package.
+    
+    This internal function creates a standard agent package containing the agent
+    configuration, tool configurations, and optionally memory state. The package
+    is a tarball that can be used to restore the agent in another environment or
+    be deployed using the Contexa deployment mechanisms.
+    
+    The standard package is primarily used for:
+    - Agent serialization and persistence
+    - Agent sharing between environments
+    - Deployment to Contexa runtimes
+    - Version control of agent configurations
     
     Args:
-        agent_dict: Dictionary representation of the agent
-        tools_config: List of tool configurations
-        output_dir: Directory to output the built agent
-        version: Version of the agent
-        include_memory: Whether to include memory in the build
+        agent_dict: Dictionary representation of the agent configuration
+        tools_config: List of dictionaries containing tool configurations
+        output_dir: Directory to output the built artifact
+        version: Semantic version string for the agent package (e.g., "0.1.0")
+        include_memory: Whether to include the agent's memory state in the package.
+            This is useful for preserving conversation history and other state.
         
     Returns:
-        Path to the built agent artifact
+        Path to the built agent package (tarball file)
+    
+    Note:
+        This is an internal function used by `build_agent()`. Most users should
+        use `build_agent()` directly instead of this function.
     """
     # Create a temporary directory for the build
     with tempfile.TemporaryDirectory() as temp_dir:

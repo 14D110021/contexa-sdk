@@ -1,0 +1,266 @@
+name: Version Check and Compatibility
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, '3.10', '3.11']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Run version compatibility check
+      run: |
+        python -m contexa_sdk.cli.version_check --full
+    
+    - name: Check framework versions
+      run: |
+        python -c "
+        import sys
+        try:
+            import langchain
+            print(f'LangChain: {langchain.__version__}')
+        except ImportError:
+            print('LangChain: Not installed')
+        
+        try:
+            import crewai
+            print(f'CrewAI: {crewai.__version__}')
+        except ImportError:
+            print('CrewAI: Not installed')
+        
+        try:
+            import openai
+            print(f'OpenAI: {openai.__version__}')
+        except ImportError:
+            print('OpenAI: Not installed')
+        
+        try:
+            import google.generativeai as genai
+            print(f'Google GenAI: Available')
+        except ImportError:
+            print('Google GenAI: Not installed')
+        "
+
+  adapter-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        framework: ['langchain', 'crewai', 'openai', 'google-genai', 'google-adk']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install base dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio
+    
+    - name: Install framework-specific dependencies
+      run: |
+        case "${{ matrix.framework }}" in
+          langchain)
+            pip install -e .[langchain]
+            ;;
+          crewai)
+            pip install -e .[crewai]
+            ;;
+          openai)
+            pip install -e .[openai]
+            ;;
+          google-genai)
+            pip install -e .[google-genai]
+            ;;
+          google-adk)
+            pip install -e .[google-adk]
+            ;;
+        esac
+    
+    - name: Test adapter compatibility
+      run: |
+        python -c "
+        import sys
+        framework = '${{ matrix.framework }}'
+        
+        try:
+            if framework == 'langchain':
+                from contexa_sdk.adapters import langchain
+                print(f'✓ {framework} adapter imported successfully')
+            elif framework == 'crewai':
+                from contexa_sdk.adapters import crewai
+                print(f'✓ {framework} adapter imported successfully')
+            elif framework == 'openai':
+                from contexa_sdk.adapters import openai
+                print(f'✓ {framework} adapter imported successfully')
+            elif framework == 'google-genai':
+                from contexa_sdk.adapters.google import genai_tool, genai_model, genai_agent
+                print(f'✓ {framework} adapter imported successfully')
+            elif framework == 'google-adk':
+                from contexa_sdk.adapters.google import adk_tool, adk_model, adk_agent
+                print(f'✓ {framework} adapter imported successfully')
+        except ImportError as e:
+            print(f'✗ {framework} adapter import failed: {e}')
+            sys.exit(1)
+        except Exception as e:
+            print(f'✗ {framework} adapter error: {e}')
+            sys.exit(1)
+        "
+    
+    - name: Run adapter-specific tests
+      run: |
+        case "${{ matrix.framework }}" in
+          langchain)
+            pytest tests/adapters/test_langchain.py -v
+            ;;
+          crewai)
+            pytest tests/adapters/test_crewai.py -v
+            ;;
+          openai)
+            pytest tests/adapters/test_openai.py -v
+            ;;
+          google-genai)
+            pytest tests/adapters/test_google_genai.py -v
+            ;;
+          google-adk)
+            pytest tests/adapters/test_google_adk.py -v
+            ;;
+        esac
+
+  cross-framework-compatibility:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install all framework dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-asyncio
+    
+    - name: Test cross-framework handoffs
+      run: |
+        pytest tests/integration/test_cross_framework_handoffs.py -v
+    
+    - name: Test Google adapter interoperability
+      run: |
+        pytest tests/integration/test_google_adapters_compatibility.py -v
+        pytest tests/integration/test_google_adapters_workflow.py -v
+
+  documentation-verification:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pydocstyle
+    
+    - name: Check docstring compliance
+      run: |
+        pydocstyle contexa_sdk --convention=google --add-ignore=D100,D104
+    
+    - name: Verify documentation completeness
+      run: |
+        python -c "
+        import os
+        import ast
+        import sys
+        
+        def check_docstrings(directory):
+            missing_docstrings = []
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if file.endswith('.py') and not file.startswith('__'):
+                        filepath = os.path.join(root, file)
+                        try:
+                            with open(filepath, 'r') as f:
+                                tree = ast.parse(f.read())
+                            
+                            for node in ast.walk(tree):
+                                if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                                    if not ast.get_docstring(node):
+                                        missing_docstrings.append(f'{filepath}:{node.lineno} - {node.name}')
+                        except Exception as e:
+                            print(f'Error parsing {filepath}: {e}')
+            
+            return missing_docstrings
+        
+        missing = check_docstrings('contexa_sdk')
+        if missing:
+            print('Missing docstrings found:')
+            for item in missing[:10]:  # Show first 10
+                print(f'  {item}')
+            if len(missing) > 10:
+                print(f'  ... and {len(missing) - 10} more')
+            sys.exit(1)
+        else:
+            print('✓ All public functions and classes have docstrings')
+        "
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+        pip install -e .[all]
+    
+    - name: Run safety check
+      run: |
+        safety check
+    
+    - name: Run bandit security scan
+      run: |
+        bandit -r contexa_sdk -f json -o bandit-report.json || true
+        bandit -r contexa_sdk
+ 

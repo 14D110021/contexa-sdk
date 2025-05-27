@@ -348,14 +348,23 @@ class HealthMonitor:
     """Monitors the health of agents and runtime components.
     
     This class coordinates running multiple health checks and aggregating
-    the results to determine overall health status.
+    the results to determine overall health status. It manages the execution
+    of health checks at configured intervals, caches results, and can trigger
+    recovery actions when health issues are detected.
+    
+    Attributes:
+        _health_checks: Dictionary mapping check names to HealthCheck instances
+        _check_interval: Time interval between health check executions in seconds
+        _last_check: Nested dictionary tracking when each check was last run
+        _health_status: Nested dictionary storing health check results
     """
     
     def __init__(self, check_interval_seconds: float = 60.0):
         """Initialize a health monitor.
         
         Args:
-            check_interval_seconds: Interval at which to run health checks
+            check_interval_seconds: Interval in seconds at which to run health checks.
+                Lower values increase monitoring responsiveness but may increase overhead.
         """
         self._health_checks: Dict[str, HealthCheck] = {}
         self._check_interval = check_interval_seconds
@@ -367,8 +376,12 @@ class HealthMonitor:
     def register_health_check(self, health_check: HealthCheck) -> None:
         """Register a health check with the monitor.
         
+        Adds a health check to the set of checks that will be executed during
+        monitoring. Each health check is identified by its name, which must be unique.
+        
         Args:
-            health_check: Health check to register
+            health_check: Health check instance to register. If a check with the
+                same name already exists, it will be replaced.
         """
         with self._lock:
             self._health_checks[health_check.name] = health_check
@@ -376,8 +389,12 @@ class HealthMonitor:
     def unregister_health_check(self, check_name: str) -> None:
         """Unregister a health check from the monitor.
         
+        Removes a health check from the set of checks that will be executed.
+        This is useful for dynamically adjusting monitoring configuration.
+        
         Args:
-            check_name: Name of the health check to unregister
+            check_name: Name of the health check to unregister. If the check
+                doesn't exist, this operation is a no-op.
         """
         with self._lock:
             if check_name in self._health_checks:
@@ -390,12 +407,22 @@ class HealthMonitor:
     ) -> Dict[str, HealthCheckResult]:
         """Run all registered health checks for an entity.
         
+        Executes each registered health check for the specified entity, respecting
+        the configured check interval. If a check has been run recently, the cached
+        result is returned instead. For checks that indicate health issues, automatic
+        recovery may be attempted.
+        
         Args:
-            entity_id: Identifier for the entity to check (e.g., agent ID)
-            context: Context information for the health checks
+            entity_id: Identifier for the entity to check (e.g., agent ID, runtime ID)
+            context: Context information for the health checks, containing data like
+                resource usage, limits, and configuration needed by health checks
             
         Returns:
-            Dictionary mapping health check names to results
+            Dictionary mapping health check names to their respective results
+            
+        Note:
+            This method is thread-safe and can be called concurrently for different
+            entities. The context is copied before use to prevent modification.
         """
         current_time = time.time()
         results = {}
@@ -468,13 +495,15 @@ class HealthMonitor:
         """Get the overall health status for an entity.
         
         This method aggregates the results of all health checks for an entity
-        and returns the worst health status.
+        and returns the worst health status found. This provides a simple way to
+        determine if an entity is having any health issues.
         
         Args:
-            entity_id: Identifier for the entity
+            entity_id: Identifier for the entity to get overall health for
             
         Returns:
-            Overall health status for the entity
+            The worst health status among all health checks for the entity,
+            or HealthStatus.UNKNOWN if no health data is available
         """
         with self._lock:
             if entity_id not in self._health_status:
@@ -499,11 +528,19 @@ class HealthMonitor:
     def get_health_details(self, entity_id: str) -> Dict[str, Any]:
         """Get detailed health information for an entity.
         
+        Provides comprehensive health information including results from
+        all health checks, the overall health status, and timestamps of
+        when checks were last performed.
+        
         Args:
-            entity_id: Identifier for the entity
+            entity_id: Identifier for the entity to get health details for
             
         Returns:
-            Dictionary with detailed health information
+            Dictionary containing detailed health information with the following keys:
+            - overall_status: The worst status across all health checks
+            - checks: Dictionary mapping check names to their results
+            - last_check_times: Dictionary mapping check names to their last execution times
+            Returns an empty dictionary if no health data is available
         """
         with self._lock:
             if entity_id not in self._health_status:

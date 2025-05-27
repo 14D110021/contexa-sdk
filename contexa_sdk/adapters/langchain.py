@@ -1,4 +1,38 @@
-"""LangChain adapter for converting Contexa objects to LangChain objects."""
+"""LangChain adapter for converting Contexa objects to LangChain objects.
+
+This adapter provides integration between Contexa SDK and LangChain, converting
+Contexa tools, models, agents, and prompts to their LangChain equivalents.
+
+The LangChain adapter enables seamless use of Contexa SDK components within
+LangChain workflows, agents, and applications. It handles the conversion of schema
+types, function signatures, and object attributes to ensure compatibility.
+
+Key features:
+- Converting ContexaTool objects to LangChain BaseTool instances
+- Adapting ContexaModel configurations to LangChain chat models
+- Creating LangChain AgentExecutor instances from ContexaAgent objects
+- Converting ContexaPrompt objects to LangChain prompt templates
+- Handling handoffs between Contexa agents and LangChain agents
+
+Usage:
+    from contexa_sdk.adapters import langchain
+    
+    # Convert a Contexa tool to a LangChain tool
+    lc_tool = langchain.tool(my_contexa_tool)
+    
+    # Convert a Contexa model to a LangChain model
+    lc_model = langchain.model(my_contexa_model)
+    
+    # Convert a Contexa agent to a LangChain agent
+    lc_agent = langchain.agent(my_contexa_agent)
+    
+    # Run the LangChain agent
+    result = await lc_agent.invoke("What's the weather in Paris?")
+
+Requirements:
+    This adapter requires LangChain to be installed:
+    `pip install contexa-sdk[langchain]`
+"""
 
 import inspect
 import json
@@ -11,18 +45,67 @@ from contexa_sdk.core.model import ContexaModel, ModelMessage
 from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.prompt import ContexaPrompt
 
+# Adapter version
+__adapter_version__ = "0.1.0"
+
 
 class LangChainAdapter(BaseAdapter):
-    """LangChain adapter for converting Contexa objects to LangChain objects."""
+    """LangChain adapter for converting Contexa objects to LangChain objects.
+    
+    This adapter implements the BaseAdapter interface for the LangChain framework.
+    It provides methods to convert Contexa SDK core objects (tools, models, agents, 
+    and prompts) to their LangChain equivalents, enabling seamless integration
+    between Contexa and LangChain.
+    
+    The adapter handles conversion of schema types, function signatures, memory
+    management, and other framework-specific details to ensure compatibility and
+    proper functionality.
+    
+    Attributes:
+        None
+        
+    Methods:
+        tool: Convert a Contexa tool to a LangChain BaseTool
+        model: Convert a Contexa model to a LangChain chat model
+        agent: Convert a Contexa agent to a LangChain AgentExecutor
+        prompt: Convert a Contexa prompt to a LangChain prompt template
+        handoff_to_langchain_agent: Handle handoff to a LangChain agent
+    """
     
     def tool(self, tool: ContexaTool) -> Any:
         """Convert a Contexa tool to a LangChain tool.
         
+        This method takes a Contexa tool and converts it to a LangChain BaseTool
+        subclass that can be used with LangChain agents and chains. It handles
+        converting the tool's input schema to a Pydantic model and wraps the tool's
+        functionality in appropriate LangChain-compatible methods.
+        
         Args:
-            tool: The Contexa tool to convert
+            tool: The Contexa tool to convert. Can be either a ContexaTool instance
+                 or a function decorated with ContexaTool.register.
             
         Returns:
-            A LangChain BaseTool object
+            A LangChain BaseTool object that can be used with LangChain agents.
+            
+        Raises:
+            ImportError: If LangChain dependencies are not installed.
+            TypeError: If the input is not a valid ContexaTool instance.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.tool import ContexaTool
+            from contexa_sdk.adapters import langchain
+            
+            @ContexaTool.register(
+                name="weather",
+                description="Get weather information for a location"
+            )
+            async def get_weather(location: str) -> str:
+                return f"Weather in {location} is sunny"
+                
+            # Convert to LangChain tool
+            lc_tool = langchain.tool(get_weather)
+            ```
         """
         try:
             from langchain_core.tools import BaseTool, StructuredTool
@@ -59,15 +142,40 @@ class LangChainAdapter(BaseAdapter):
     def model(self, model: ContexaModel) -> Any:
         """Convert a Contexa model to a LangChain chat model.
         
+        This method adapts a Contexa model to a LangChain chat model by creating
+        a custom LangChain BaseChatModel implementation that uses the Contexa
+        model for generating responses. It handles message format conversion and
+        provides a standard LangChain interface.
+        
         Args:
-            model: The Contexa model to convert
+            model: The Contexa model to convert. This should be a ContexaModel instance
+                  with provider, model_name, and other configuration attributes.
             
         Returns:
             A dictionary containing the model configuration with keys:
-            - langchain_model: The LangChain model object
+            - langchain_model: The LangChain model object (BaseChatModel instance)
             - model_name: The model name
             - config: Additional configuration
             - provider: The model provider
+            
+        Raises:
+            ImportError: If LangChain dependencies are not installed.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import langchain
+            
+            model = ContexaModel(
+                provider="openai",
+                model_name="gpt-4o",
+                temperature=0.7
+            )
+                
+            # Convert to LangChain model
+            lc_model_info = langchain.model(model)
+            lc_model = lc_model_info["langchain_model"]
+            ```
         """
         try:
             from langchain_core.language_models.chat_models import BaseChatModel
@@ -147,11 +255,38 @@ class LangChainAdapter(BaseAdapter):
     def agent(self, agent: ContexaAgent) -> Any:
         """Convert a Contexa agent to a LangChain agent.
         
+        This method creates a LangChain AgentExecutor from a Contexa agent, converting
+        the agent's model, tools, and prompts to their LangChain equivalents. The resulting
+        AgentExecutor can be used within LangChain workflows and applications.
+        
         Args:
-            agent: The Contexa agent to convert
+            agent: The Contexa agent to convert. Should be a ContexaAgent instance with
+                  model, tools, and other configuration attributes.
             
         Returns:
-            A LangChain AgentExecutor
+            A LangChain AgentExecutor that can be used to run queries and tasks.
+            The executor has a __contexa_agent__ attribute for reference and handoff support.
+            
+        Raises:
+            ImportError: If LangChain dependencies are not installed.
+            
+        Example:
+            ```python
+            from contexa_sdk.core.agent import ContexaAgent
+            from contexa_sdk.core.model import ContexaModel
+            from contexa_sdk.adapters import langchain
+            
+            agent = ContexaAgent(
+                name="Assistant",
+                model=ContexaModel(provider="openai", model_name="gpt-4o"),
+                tools=[weather_tool, search_tool],
+                system_prompt="You are a helpful assistant."
+            )
+                
+            # Convert to LangChain agent
+            lc_agent = langchain.agent(agent)
+            result = await lc_agent.invoke("What's the weather in Paris?")
+            ```
         """
         try:
             from langchain.agents import AgentExecutor

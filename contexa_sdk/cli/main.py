@@ -1,4 +1,34 @@
-"""Main CLI entry point for Contexa SDK."""
+"""Main CLI entry point for Contexa SDK.
+
+This module implements the command-line interface (CLI) for the Contexa SDK,
+providing commands for:
+
+- Project initialization
+- Agent building and packaging
+- Deployment to Contexa Cloud
+- Listing deployed agents
+- Running agents locally
+
+The CLI uses Typer for command definition and Rich for terminal output formatting.
+Commands are designed to follow a natural workflow from initialization through
+development, building, and deployment.
+
+Example usage:
+    # Initialize a new project
+    ctx init my_project
+    
+    # Build an agent
+    ctx build --agent-path my_project/agent.py
+    
+    # Deploy the agent
+    ctx deploy ./build/my_agent_0.1.0.tar.gz
+    
+    # List deployed agents
+    ctx list
+    
+    # Run an agent locally
+    ctx run "What's the weather like today?"
+"""
 
 import os
 import sys
@@ -31,7 +61,33 @@ console = Console()
 def init_project(
     dir_path: str = typer.Argument(".", help="Directory to initialize in (default: current directory)"),
 ):
-    """Initialize a new Contexa project."""
+    """Initialize a new Contexa project.
+    
+    This command creates a new Contexa project with the necessary directory
+    structure and template files. It sets up:
+    
+    - Project configuration directory (.ctx/)
+    - Build artifacts directory (.ctx/build/)
+    - Deployments tracking directory (.ctx/deployments/)
+    - Configuration file (.ctx/config.json)
+    - Sample agent file (agent.py)
+    - Python project configuration (pyproject.toml)
+    
+    The created project structure follows best practices for Contexa agent
+    development and provides a starting point with a simple agent definition.
+    
+    Args:
+        dir_path: Directory where the project should be initialized. If the
+            directory doesn't exist, it will be created. Defaults to the
+            current directory.
+    
+    Example:
+        # Initialize in the current directory
+        $ ctx init
+        
+        # Initialize in a new directory
+        $ ctx init my_search_agent
+    """
     path = Path(dir_path)
     if not path.exists():
         path.mkdir(parents=True)
@@ -121,7 +177,37 @@ def build_command(
     agent_path: str = typer.Option("agent.py", help="Path to agent module"),
     output_dir: Optional[str] = typer.Option(None, help="Output directory for build artifacts"),
 ):
-    """Build an agent for deployment."""
+    """Build an agent for deployment.
+    
+    This command loads an agent from a Python module and packages it for
+    deployment. The agent module must define a ContexaAgent instance as
+    the __contexa_agent__ attribute.
+    
+    The build process:
+    1. Loads the agent from the specified module
+    2. Serializes the agent configuration and tools
+    3. Packages everything into a deployable artifact (.tar.gz)
+    
+    The resulting artifact can be deployed to Contexa Cloud using the
+    'deploy' command.
+    
+    Args:
+        agent_path: Path to the Python module containing the agent definition.
+            The module must define a __contexa_agent__ attribute that is a
+            ContexaAgent instance. Defaults to "agent.py".
+        output_dir: Directory where the build artifact should be placed.
+            If not specified, the default build directory (.ctx/build/) is used.
+    
+    Example:
+        # Build an agent from the default agent.py file
+        $ ctx build
+        
+        # Build an agent from a custom module
+        $ ctx build --agent-path agents/search_agent.py
+        
+        # Specify a custom output directory
+        $ ctx build --output-dir ./dist
+    """
     # Load the agent from the module
     agent = _load_agent_from_module(agent_path)
     
@@ -137,7 +223,32 @@ def build_command(
 def deploy_command(
     artifact_path: str = typer.Argument(..., help="Path to built agent artifact"),
 ):
-    """Deploy an agent to Contexa Cloud."""
+    """Deploy an agent to Contexa Cloud.
+    
+    This command uploads a built agent artifact to Contexa Cloud, making it
+    accessible via an API endpoint. The deployment process:
+    
+    1. Loads the Contexa configuration
+    2. Verifies API credentials
+    3. Uploads the artifact to Contexa Cloud
+    4. Records deployment information locally
+    
+    The command requires a Contexa API key, which can be provided either
+    through the CONTEXA_API_KEY environment variable or in the .ctx/config.json
+    file.
+    
+    Args:
+        artifact_path: Path to the built agent artifact (.tar.gz) created by the
+            'build' command.
+    
+    Example:
+        # Deploy a specific artifact
+        $ ctx deploy .ctx/build/search_agent_0.1.0.tar.gz
+        
+        # Deploy with API key from environment variable
+        $ export CONTEXA_API_KEY=your-api-key
+        $ ctx deploy .ctx/build/search_agent_0.1.0.tar.gz
+    """
     # Load config
     config_path = Path(".ctx/config.json")
     config = None
@@ -168,7 +279,23 @@ def deploy_command(
 
 @app.command("list")
 def list_command():
-    """List deployed agents."""
+    """List deployed agents.
+    
+    This command displays information about all agents deployed from the
+    current project. For each deployment, it shows:
+    
+    - Endpoint ID: Unique identifier for the endpoint
+    - Status: Current deployment status
+    - Endpoint URL: URL where the agent can be accessed
+    - Created At: Timestamp when the agent was deployed
+    
+    The command reads deployment information from the local .ctx/deployments/
+    directory, which is updated each time an agent is deployed.
+    
+    Example:
+        # List all deployed agents
+        $ ctx list
+    """
     deployments = list_deployments()
     
     if not deployments:
@@ -192,7 +319,30 @@ def run_command(
     agent_path: str = typer.Option("agent.py", help="Path to agent module"),
     query: str = typer.Argument(..., help="Query to run against the agent"),
 ):
-    """Run an agent locally."""
+    """Run an agent locally.
+    
+    This command loads an agent from a Python module and runs it locally with
+    the specified query. This is useful for testing and debugging agents before
+    deploying them.
+    
+    The command:
+    1. Loads the agent from the specified module
+    2. Runs the agent with the provided query
+    3. Displays the agent's response
+    
+    Args:
+        agent_path: Path to the Python module containing the agent definition.
+            The module must define a __contexa_agent__ attribute that is a
+            ContexaAgent instance. Defaults to "agent.py".
+        query: The query to run against the agent.
+    
+    Example:
+        # Run a query against the default agent
+        $ ctx run "What's the weather like today?"
+        
+        # Run a query against a custom agent
+        $ ctx run --agent-path agents/search_agent.py "How tall is Mount Everest?"
+    """
     # Load the agent from the module
     agent = _load_agent_from_module(agent_path)
     
@@ -206,13 +356,27 @@ def run_command(
 
 
 def _load_agent_from_module(module_path: str) -> ContexaAgent:
-    """Load an agent from a module.
+    """Load an agent from a Python module.
+    
+    This internal helper function loads a ContexaAgent instance from a Python
+    module. The module must define a __contexa_agent__ attribute that is a
+    ContexaAgent instance.
+    
+    The function:
+    1. Verifies the module exists
+    2. Loads the module
+    3. Extracts the __contexa_agent__ attribute
+    4. Verifies it's a ContexaAgent instance
     
     Args:
-        module_path: Path to the module to load
+        module_path: Path to the Python module containing the agent definition.
         
     Returns:
-        The loaded agent
+        The ContexaAgent instance defined in the module.
+        
+    Raises:
+        SystemExit: If the module doesn't exist, doesn't define __contexa_agent__,
+            or __contexa_agent__ is not a ContexaAgent instance.
     """
     module_path = Path(module_path)
     if not module_path.exists():

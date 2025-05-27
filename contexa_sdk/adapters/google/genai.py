@@ -42,6 +42,9 @@ from contexa_sdk.core.model import ContexaModel, ModelMessage
 from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.prompt import ContexaPrompt
 
+# Adapter version
+__adapter_version__ = "0.1.0"
+
 # Try to import Google GenAI SDK
 try:
     from google import genai

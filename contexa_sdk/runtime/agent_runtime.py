@@ -281,7 +281,8 @@ class AgentRuntime:
         """Initialize the agent runtime.
         
         Args:
-            options: Runtime configuration options
+            options: Runtime configuration options for controlling agent execution
+                parameters like concurrency, timeouts, and resource limits.
         """
         self.options = options or RuntimeOptions()
         self.agents: Dict[str, ContexaAgent] = {}
@@ -291,14 +292,19 @@ class AgentRuntime:
     async def register_agent(self, agent: ContexaAgent) -> str:
         """Register an agent with the runtime.
         
+        Registers a ContexaAgent with the runtime system, making it available
+        for execution. Each registered agent receives a unique agent ID that
+        can be used for future operations.
+        
         Args:
-            agent: The agent to register
+            agent: The ContexaAgent instance to register with the runtime
             
         Returns:
-            The agent ID
+            The agent ID (either from the agent if it has one, or a newly generated UUID)
             
         Raises:
-            AgentRuntimeException: If the agent could not be registered
+            AgentRuntimeException: If the agent could not be registered due to
+                initialization failure or resource constraints
         """
         agent_id = getattr(agent, 'agent_id', str(uuid.uuid4()))
         self.agents[agent_id] = agent
@@ -316,11 +322,17 @@ class AgentRuntime:
     async def start_agent(self, agent_id: str) -> None:
         """Start an agent.
         
+        Transitions an agent from READY to RUNNING state, initializing any
+        required resources for the agent. If the agent is already running,
+        this method is a no-op.
+        
         Args:
             agent_id: The ID of the agent to start
             
         Raises:
-            AgentRuntimeException: If the agent could not be started
+            AgentRuntimeException: If the agent could not be started due to
+                initialization errors, if the agent does not exist, or if 
+                the agent is in an invalid state for starting
         """
         if agent_id not in self.agents:
             raise AgentRuntimeException(f"Agent {agent_id} not found")
@@ -338,11 +350,17 @@ class AgentRuntime:
     async def stop_agent(self, agent_id: str) -> None:
         """Stop an agent.
         
+        Gracefully stops an agent, canceling any in-progress runs and
+        releasing associated resources. Transitions the agent to STOPPED state.
+        If the agent is already stopped, this method is a no-op.
+        
         Args:
             agent_id: The ID of the agent to stop
             
         Raises:
-            AgentRuntimeException: If the agent could not be stopped
+            AgentRuntimeException: If the agent could not be stopped, if the
+                agent does not exist, or if the agent is in an invalid state
+                for stopping
         """
         if agent_id not in self.agents:
             raise AgentRuntimeException(f"Agent {agent_id} not found")
@@ -374,17 +392,27 @@ class AgentRuntime:
     ) -> Any:
         """Run an agent with the given input.
         
+        Executes an agent with the provided input, optionally using additional
+        tools for this specific run. If the agent is not already running, it
+        will be started automatically. The method respects timeout settings
+        from either the method parameter or the runtime options.
+        
         Args:
             agent_id: The ID of the agent to run
-            input: The input for the agent
-            tools: Optional additional tools to use for this run
-            timeout: Optional timeout in seconds (overrides runtime options)
+            input: The input data for the agent (typically a string prompt or
+                structured data depending on the agent type)
+            tools: Optional additional tools to provide to the agent for this
+                run only, supplementing any tools the agent already has
+            timeout: Optional timeout in seconds, overriding the default timeout
+                in runtime options if specified
             
         Returns:
-            The result of the agent run
+            The result of the agent run, typically the agent's response to the input
             
         Raises:
-            AgentRuntimeException: If the agent could not be run
+            AgentRuntimeException: If the agent could not be run due to errors,
+                if the agent does not exist, if the run times out, or if there
+                are resource constraints
         """
         if agent_id not in self.agents:
             raise AgentRuntimeException(f"Agent {agent_id} not found")
@@ -413,14 +441,18 @@ class AgentRuntime:
     async def get_agent_status(self, agent_id: str) -> AgentStatus:
         """Get the status of an agent.
         
+        Retrieves the current status of a registered agent, which can be
+        one of the AgentStatus enum values (INITIALIZING, READY, RUNNING,
+        PAUSED, STOPPING, STOPPED, ERROR).
+        
         Args:
-            agent_id: The ID of the agent
+            agent_id: The ID of the agent to get status for
             
         Returns:
-            The agent status
+            The current agent status as an AgentStatus enum value
             
         Raises:
-            AgentRuntimeException: If the agent is not found
+            AgentRuntimeException: If the agent is not found in the runtime
         """
         if agent_id not in self.agent_status:
             raise AgentRuntimeException(f"Agent {agent_id} not found")
@@ -430,14 +462,19 @@ class AgentRuntime:
     async def save_state(self, agent_id: str) -> str:
         """Save the state of an agent.
         
+        Persists the current state of an agent, including its memory,
+        conversation history, and any runtime-specific state. The state
+        can later be restored using the returned state ID.
+        
         Args:
-            agent_id: The ID of the agent
+            agent_id: The ID of the agent whose state should be saved
             
         Returns:
-            A state ID that can be used to restore the agent
+            A state ID (UUID) that can be used to restore the agent state
             
         Raises:
-            AgentRuntimeException: If the agent state could not be saved
+            AgentRuntimeException: If the agent is not found or if the
+                state could not be saved due to errors
         """
         if agent_id not in self.agents:
             raise AgentRuntimeException(f"Agent {agent_id} not found")
@@ -449,14 +486,19 @@ class AgentRuntime:
     async def restore_agent(self, state_id: str) -> str:
         """Restore an agent from a saved state.
         
+        Creates a new agent instance with the state restored from a
+        previously saved state. This includes the agent's memory,
+        conversation history, and any runtime-specific state.
+        
         Args:
-            state_id: The state ID returned by save_state
+            state_id: The state ID returned by a previous call to save_state
             
         Returns:
-            The ID of the restored agent
+            The ID of the newly created and restored agent
             
         Raises:
-            AgentRuntimeException: If the agent could not be restored
+            AgentRuntimeException: If the state could not be found or if
+                the agent could not be restored due to errors
         """
         # For the minimal implementation, create a new agent
         agent_id = f"agent-{uuid.uuid4()}"

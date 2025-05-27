@@ -347,17 +347,42 @@ class ConsoleTraceExporter(TraceExporter):
 
 
 class Tracer:
-    """Creates and manages trace spans.
+    """Creates and manages trace spans for distributed request tracing.
     
-    The Tracer provides methods to create and manage spans for tracing
-    requests across distributed systems.
+    The Tracer is responsible for creating and tracking spans across distributed
+    systems, enabling observability into request flows through multiple components.
+    It provides functionality for:
+    
+    1. Creating spans to represent operations or processing steps
+    2. Building parent-child relationships between spans to model causality
+    3. Adding attributes, events, and status information to spans
+    4. Exporting span data to observability systems
+    5. Managing the lifecycle of spans
+    
+    This implementation supports both manual span creation and context manager-based
+    span management, with support for distributed tracing across different services
+    and integration with various tracing backends through exporters.
+    
+    Attributes:
+        options: Configuration options for the tracer
+        exporters: List of registered trace exporters
+        active_spans: Dictionary of currently active spans by span ID
+        finished_spans: List of completed spans waiting for export
+        _export_task: Background task for periodic span export
+        _is_exporting: Flag indicating if periodic export is active
     """
     
     def __init__(self, options: Optional[TraceOptions] = None):
-        """Initialize a tracer.
+        """Initialize a tracer with configuration options.
+        
+        Creates a new tracer instance with the specified configuration options
+        or default options if none are provided. The tracer starts with no
+        exporters and no active spans.
         
         Args:
-            options: Trace configuration options
+            options: Optional configuration options controlling tracing behavior
+                such as service name, sampling rate, and limits on span attributes.
+                If not provided, default options are used.
         """
         self.options = options or TraceOptions()
         self.exporters: List[TraceExporter] = []
@@ -367,10 +392,22 @@ class Tracer:
         self._is_exporting = False
     
     def add_exporter(self, exporter: TraceExporter) -> None:
-        """Add a trace exporter.
+        """Add a trace exporter to receive completed spans.
+        
+        Exporters are responsible for sending spans to external tracing systems
+        such as Jaeger, Zipkin, OpenTelemetry collectors, or logging systems.
+        Multiple exporters can be added to send spans to different destinations.
         
         Args:
-            exporter: The exporter to add
+            exporter: The exporter instance to add. Must implement the
+                TraceExporter interface with an export() method.
+                
+        Example:
+            ```python
+            tracer = Tracer()
+            tracer.add_exporter(ConsoleTraceExporter())
+            tracer.add_exporter(OTelTraceExporter("http://collector:4317"))
+            ```
         """
         self.exporters.append(exporter)
     
@@ -381,16 +418,39 @@ class Tracer:
         kind: str = "internal",
         attributes: Optional[Dict[str, Any]] = None
     ) -> Span:
-        """Start a new span.
+        """Start a new span to track an operation.
+        
+        Creates a new span representing an operation or processing step. The span
+        can be a root span (no parent) or a child of another span to represent
+        a causal relationship. The returned span must be ended with end_span()
+        when the operation completes.
         
         Args:
-            name: Name of the span
-            parent: Parent span or context
-            kind: Kind of span
-            attributes: Initial attributes for the span
+            name: Human-readable name for the operation (e.g., "process_request")
+            parent: Optional parent span or span context to establish a causal
+                relationship. If None, creates a root span with a new trace ID.
+            kind: Type of span, indicating the role in the request flow. Valid values
+                include "internal", "server", "client", "producer", "consumer", 
+                "agent", "tool", "handoff", and "model".
+            attributes: Optional initial attributes to add to the span for additional
+                context, such as operation parameters or metadata.
             
         Returns:
-            The new span
+            A new Span object representing the started operation
+            
+        Example:
+            ```python
+            # Create a root span
+            root_span = tracer.start_span("process_request", kind="server")
+            
+            # Create a child span
+            child_span = tracer.start_span("fetch_data", parent=root_span, kind="client",
+                                         attributes={"database": "users"})
+            
+            # Don't forget to end spans when operations complete
+            tracer.end_span(child_span)
+            tracer.end_span(root_span)
+            ```
         """
         # Create the span context
         if parent is None:
@@ -430,16 +490,39 @@ class Tracer:
         kind: str = "internal",
         attributes: Optional[Dict[str, Any]] = None
     ):
-        """Create a span as a context manager.
+        """Create and automatically manage a span using a context manager.
+        
+        This is the preferred way to create spans as it ensures they are properly
+        ended even if exceptions occur. The span is automatically started when
+        entering the context and ended when exiting.
         
         Args:
-            name: Name of the span
-            parent: Parent span or context
-            kind: Kind of span
-            attributes: Initial attributes for the span
+            name: Human-readable name for the operation (e.g., "process_request")
+            parent: Optional parent span or span context to establish a causal
+                relationship. If None, creates a root span with a new trace ID.
+            kind: Type of span, indicating the role in the request flow. Valid values
+                include "internal", "server", "client", "producer", "consumer", 
+                "agent", "tool", "handoff", and "model".
+            attributes: Optional initial attributes to add to the span
             
         Yields:
-            The new span
+            An active Span object that can be used to add attributes, events, or
+            set status information during the operation
+            
+        Example:
+            ```python
+            # Using context manager for automatic span management
+            with tracer.span("process_request", kind="server") as root_span:
+                # Do some work
+                root_span.set_attribute("user_id", "123")
+                
+                # Nested span using parent
+                with tracer.span("fetch_data", parent=root_span, kind="client") as child_span:
+                    # Do more work
+                    child_span.add_event("cache_miss")
+                    data = fetch_data_from_db()
+            # Both spans are automatically ended when their contexts exit
+            ```
         """
         span = self.start_span(name, parent, kind, attributes)
         try:
@@ -451,11 +534,34 @@ class Tracer:
             self.end_span(span)
     
     def end_span(self, span: Span, end_time: Optional[float] = None) -> None:
-        """End a span.
+        """End a span, marking the operation as complete.
+        
+        This method finalizes a span by setting its end time, removing it from
+        active spans, and adding it to finished spans for export. If exporters
+        are registered, the span is immediately exported.
         
         Args:
-            span: The span to end
-            end_time: End time of the span (now if not provided)
+            span: The span to end, previously created with start_span()
+            end_time: Optional explicit end time as a timestamp (seconds since epoch).
+                If not provided, the current time is used.
+                
+        Note:
+            Spans created with the span() context manager are automatically ended
+            and don't need to be ended manually.
+            
+        Example:
+            ```python
+            span = tracer.start_span("process_data")
+            try:
+                # Do some work
+                process_data()
+                span.set_status("ok")
+            except Exception as e:
+                span.set_status("error", str(e))
+                raise
+            finally:
+                tracer.end_span(span)
+            ```
         """
         # End the span
         span.end(end_time)
@@ -477,10 +583,25 @@ class Tracer:
                     pass
     
     async def start_periodic_export(self, interval_seconds: float = 15.0) -> None:
-        """Start periodic export of spans.
+        """Start periodic export of finished spans at specified intervals.
+        
+        Begins an asynchronous task that exports spans at regular intervals.
+        This is useful for batching span exports to reduce overhead and network
+        traffic, especially in high-throughput applications.
         
         Args:
-            interval_seconds: Time between exports in seconds
+            interval_seconds: Time between exports in seconds (default: 15.0)
+                
+        Note:
+            If periodic export is already running, this method is a no-op.
+            The task runs until stop_periodic_export() is called or the
+            application shuts down.
+            
+        Example:
+            ```python
+            # Start exporting spans every 5 seconds
+            await tracer.start_periodic_export(5.0)
+            ```
         """
         if self._is_exporting:
             return
@@ -489,7 +610,21 @@ class Tracer:
         self._export_task = asyncio.create_task(self._export_loop(interval_seconds))
     
     async def stop_periodic_export(self) -> None:
-        """Stop periodic export of spans."""
+        """Stop periodic export of spans.
+        
+        Cancels the background task that periodically exports spans.
+        Any spans collected after this call will not be automatically
+        exported until start_periodic_export() is called again.
+        
+        This method is asynchronous and waits for the export task to
+        be fully cancelled before returning.
+        
+        Example:
+            ```python
+            # Stop the periodic export
+            await tracer.stop_periodic_export()
+            ```
+        """
         self._is_exporting = False
         if self._export_task:
             self._export_task.cancel()

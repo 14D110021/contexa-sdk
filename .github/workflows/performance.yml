@@ -1,0 +1,352 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly on Sundays at 3 AM UTC
+    - cron: '0 3 * * 0'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install pytest pytest-benchmark memory_profiler psutil
+    
+    - name: Run performance benchmarks
+      run: |
+        python -c "
+        import time
+        import psutil
+        import asyncio
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from contexa_sdk.deployment.builder import build_agent
+        from contexa_sdk.deployment.mcp_generator import generate_mcp_app_py
+        from pydantic import BaseModel
+        import tempfile
+        import os
+        
+        print('=== Contexa SDK Performance Benchmarks ===')
+        
+        # Benchmark 1: Agent Creation
+        print('\\n1. Agent Creation Performance')
+        start_time = time.time()
+        
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='benchmark_tool', description='Benchmark tool')
+        async def benchmark_tool(inp: TestInput) -> str:
+            return f'Benchmark result for {inp.query}'
+        
+        agents = []
+        for i in range(100):
+            agent = ContexaAgent(
+                name=f'Benchmark Agent {i}',
+                description=f'Agent {i} for benchmarking',
+                model=ContexaModel('gpt-4o', provider='openai'),
+                tools=[benchmark_tool.__contexa_tool__]
+            )
+            agents.append(agent)
+        
+        creation_time = time.time() - start_time
+        print(f'Created 100 agents in {creation_time:.3f} seconds')
+        print(f'Average: {creation_time/100*1000:.2f} ms per agent')
+        
+        # Benchmark 2: Tool Registration
+        print('\\n2. Tool Registration Performance')
+        start_time = time.time()
+        
+        tools = []
+        for i in range(1000):
+            @ContexaTool.register(name=f'tool_{i}', description=f'Tool {i}')
+            async def dynamic_tool(inp: TestInput) -> str:
+                return f'Tool {i} result'
+            tools.append(dynamic_tool.__contexa_tool__)
+        
+        registration_time = time.time() - start_time
+        print(f'Registered 1000 tools in {registration_time:.3f} seconds')
+        print(f'Average: {registration_time/1000*1000:.2f} ms per tool')
+        
+        # Benchmark 3: Agent Building
+        print('\\n3. Agent Building Performance')
+        start_time = time.time()
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            build_path = build_agent(
+                agent=agents[0],
+                output_dir=temp_dir,
+                version='1.0.0'
+            )
+            
+        build_time = time.time() - start_time
+        print(f'Built agent package in {build_time:.3f} seconds')
+        
+        # Benchmark 4: MCP Code Generation
+        print('\\n4. MCP Code Generation Performance')
+        start_time = time.time()
+        
+        agent_dict = agents[0].to_dict()
+        tools_config = [tool.to_dict() for tool in agents[0].tools]
+        
+        for i in range(10):
+            app_code = generate_mcp_app_py(agent_dict, tools_config, '1.0')
+        
+        generation_time = time.time() - start_time
+        print(f'Generated MCP code 10 times in {generation_time:.3f} seconds')
+        print(f'Average: {generation_time/10*1000:.2f} ms per generation')
+        
+        # Memory Usage
+        print('\\n5. Memory Usage')
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        print(f'RSS Memory: {memory_info.rss / 1024 / 1024:.2f} MB')
+        print(f'VMS Memory: {memory_info.vms / 1024 / 1024:.2f} MB')
+        
+        print('\\n=== Benchmark Complete ===')
+        "
+    
+    - name: Adapter Performance Test
+      run: |
+        python -c "
+        import time
+        import asyncio
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        print('=== Adapter Performance Tests ===')
+        
+        # Create test agent
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='perf_tool', description='Performance tool')
+        async def perf_tool(inp: TestInput) -> str:
+            return f'Performance result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='Performance Test Agent',
+            description='Agent for performance testing',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[perf_tool.__contexa_tool__]
+        )
+        
+        # Test each adapter
+        adapters = [
+            ('LangChain', 'contexa_sdk.adapters.langchain'),
+            ('CrewAI', 'contexa_sdk.adapters.crewai'),
+            ('OpenAI', 'contexa_sdk.adapters.openai'),
+        ]
+        
+        for adapter_name, adapter_module in adapters:
+            try:
+                print(f'\\n{adapter_name} Adapter Performance:')
+                start_time = time.time()
+                
+                # Import and convert
+                module = __import__(adapter_module, fromlist=['agent'])
+                converted_agent = module.agent(agent)
+                
+                conversion_time = time.time() - start_time
+                print(f'  Conversion time: {conversion_time*1000:.2f} ms')
+                
+            except ImportError as e:
+                print(f'  {adapter_name} not available: {e}')
+            except Exception as e:
+                print(f'  {adapter_name} error: {e}')
+        
+        # Test Google adapters
+        try:
+            print(f'\\nGoogle GenAI Adapter Performance:')
+            start_time = time.time()
+            
+            from contexa_sdk.adapters.google import genai_agent
+            genai_converted = genai_agent(agent)
+            
+            conversion_time = time.time() - start_time
+            print(f'  Conversion time: {conversion_time*1000:.2f} ms')
+            
+        except ImportError as e:
+            print(f'  Google GenAI not available: {e}')
+        except Exception as e:
+            print(f'  Google GenAI error: {e}')
+        
+        try:
+            print(f'\\nGoogle ADK Adapter Performance:')
+            start_time = time.time()
+            
+            from contexa_sdk.adapters.google import adk_agent
+            adk_converted = adk_agent(agent)
+            
+            conversion_time = time.time() - start_time
+            print(f'  Conversion time: {conversion_time*1000:.2f} ms')
+            
+        except ImportError as e:
+            print(f'  Google ADK not available: {e}')
+        except Exception as e:
+            print(f'  Google ADK error: {e}')
+        
+        print('\\n=== Adapter Performance Complete ===')
+        "
+
+  memory-profiling:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install memory_profiler psutil
+    
+    - name: Memory profiling test
+      run: |
+        python -c "
+        import psutil
+        import gc
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        print('=== Memory Profiling ===')
+        
+        def get_memory_usage():
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024  # MB
+        
+        initial_memory = get_memory_usage()
+        print(f'Initial memory: {initial_memory:.2f} MB')
+        
+        # Create many agents to test memory usage
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='memory_tool', description='Memory test tool')
+        async def memory_tool(inp: TestInput) -> str:
+            return f'Memory test result for {inp.query}'
+        
+        agents = []
+        for i in range(1000):
+            agent = ContexaAgent(
+                name=f'Memory Test Agent {i}',
+                description=f'Agent {i} for memory testing',
+                model=ContexaModel('gpt-4o', provider='openai'),
+                tools=[memory_tool.__contexa_tool__]
+            )
+            agents.append(agent)
+            
+            if i % 100 == 0:
+                current_memory = get_memory_usage()
+                print(f'After {i+1} agents: {current_memory:.2f} MB (+{current_memory-initial_memory:.2f} MB)')
+        
+        final_memory = get_memory_usage()
+        print(f'Final memory: {final_memory:.2f} MB')
+        print(f'Total increase: {final_memory-initial_memory:.2f} MB')
+        print(f'Average per agent: {(final_memory-initial_memory)/1000*1024:.2f} KB')
+        
+        # Test garbage collection
+        del agents
+        gc.collect()
+        
+        after_gc_memory = get_memory_usage()
+        print(f'After GC: {after_gc_memory:.2f} MB')
+        print(f'Memory freed: {final_memory-after_gc_memory:.2f} MB')
+        
+        print('=== Memory Profiling Complete ===')
+        "
+
+  load-testing:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[all]
+        pip install asyncio aiohttp
+    
+    - name: Concurrent operations test
+      run: |
+        python -c "
+        import asyncio
+        import time
+        from contexa_sdk.core.agent import ContexaAgent
+        from contexa_sdk.core.tool import ContexaTool
+        from contexa_sdk.core.model import ContexaModel
+        from pydantic import BaseModel
+        
+        print('=== Load Testing ===')
+        
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='load_tool', description='Load test tool')
+        async def load_tool(inp: TestInput) -> str:
+            # Simulate some work
+            await asyncio.sleep(0.01)
+            return f'Load test result for {inp.query}'
+        
+        agent = ContexaAgent(
+            name='Load Test Agent',
+            description='Agent for load testing',
+            model=ContexaModel('gpt-4o', provider='openai'),
+            tools=[load_tool.__contexa_tool__]
+        )
+        
+        async def run_agent_task(agent_id):
+            # Simulate agent run (without actual LLM call)
+            await asyncio.sleep(0.1)  # Simulate processing time
+            return f'Result from agent {agent_id}'
+        
+        async def load_test():
+            print('Testing concurrent agent operations...')
+            
+            # Test with different concurrency levels
+            for concurrency in [10, 50, 100]:
+                start_time = time.time()
+                
+                tasks = [run_agent_task(i) for i in range(concurrency)]
+                results = await asyncio.gather(*tasks)
+                
+                end_time = time.time()
+                duration = end_time - start_time
+                
+                print(f'Concurrency {concurrency}: {duration:.3f}s total, {duration/concurrency*1000:.2f}ms avg')
+        
+        asyncio.run(load_test())
+        
+        print('=== Load Testing Complete ===')
+        " 

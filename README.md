@@ -29,7 +29,8 @@ Convert Contexa objects to native framework objects for:
 - LangChain (≥0.1.0)
 - CrewAI (≥0.110.0)
 - OpenAI Agents SDK (≥1.2.0)
-- Google ADK (≥0.5.0)
+- Google GenAI (≥0.3.0) - For simple Gemini model integrations
+- Google ADK (≥0.5.0) - For advanced agent capabilities
 
 ### Agent Runtime
 
@@ -68,25 +69,65 @@ Our new orchestration module enables sophisticated multi-agent collaboration:
 ## Installation
 
 ```bash
-# Install core SDK
+# Install core SDK only
 pip install contexa-sdk
 
 # Install with specific framework support
 pip install contexa-sdk[langchain]    # For LangChain support
 pip install contexa-sdk[crewai]       # For CrewAI support
 pip install contexa-sdk[openai]       # For OpenAI Agents SDK support
-pip install contexa-sdk[google-genai] # For Google GenAI (Gemini) support
-pip install contexa-sdk[google-adk]   # For Google Agent Development Kit support
-pip install contexa-sdk[google]       # For both Google adapters
 pip install contexa-sdk[viz]          # For agent visualization support
-
-# Google adapters have different use cases:
-# - google-genai: For Gemini models via Google's GenAI SDK (simpler, more streamlined)
-# - google-adk: For more complex agent capabilities via Google's Agent Development Kit
 
 # Install with all framework support
 pip install contexa-sdk[all]
 ```
+
+### Google Adapter Installation
+
+Contexa SDK provides two separate Google adapters with distinct capabilities, which can be installed individually or together:
+
+```bash
+# For Google GenAI (Gemini) support only
+pip install contexa-sdk[google-genai]
+
+# For Google Agent Development Kit (ADK) support only
+pip install contexa-sdk[google-adk]
+
+# For both Google adapters
+pip install contexa-sdk[google]
+```
+
+#### Choosing the Right Google Adapter
+
+1. **Google GenAI** (`google-genai`): 
+   - Simpler, lighter weight integration with Google's Generative AI SDK
+   - Direct access to Gemini models
+   - Streamlined for question-answering and function-calling
+   - Best for single-agent systems with straightforward task requirements
+   - Smaller dependency footprint: only requires `google-generativeai>=0.3.0`
+
+2. **Google ADK** (`google-adk`): 
+   - Integration with Google's Agent Development Kit
+   - More advanced reasoning capabilities and multi-step planning
+   - Support for complex agent hierarchies and sophisticated workflows
+   - Best for complex multi-agent systems requiring advanced reasoning
+   - Requires `google-adk>=0.5.0`
+
+Each adapter can be imported separately with specific prefixes:
+
+```python
+# Direct GenAI adapter imports
+from contexa_sdk.adapters.google import (
+    genai_tool, genai_model, genai_agent, genai_handoff
+)
+
+# Direct ADK adapter imports
+from contexa_sdk.adapters.google import (
+    adk_tool, adk_model, adk_agent, adk_handoff
+)
+```
+
+For detailed migration guidance from the old Google adapter structure, see our [Google Adapter Migration Guide](docs/google_adapter_migration.md) and [Google Adapters Documentation](docs/google_adapters.md).
 
 ## Quick Start
 
@@ -151,7 +192,49 @@ adk_assistant = adk_agent(agent)
 result = await adk_assistant.run("What's new in AI?")
 ```
 
-### 4. Using the New Orchestration Features
+### 4. Cross-Framework Integration
+
+You can easily create workflows that combine agents from different frameworks:
+
+```python
+from contexa_sdk.runtime.handoff import handoff
+
+# Create a GenAI agent for research
+research_agent = genai_agent(ContexaAgent(
+    name="Researcher",
+    model=ContexaModel(provider="google", model_id="gemini-pro"),
+    tools=[web_search]
+))
+
+# Create an ADK agent for analysis 
+analysis_agent = adk_agent(ContexaAgent(
+    name="Analyst",
+    model=ContexaModel(provider="google", model_id="gemini-pro"),
+    tools=[analysis_tool]
+))
+
+# Create a LangChain agent for report formatting
+report_agent = langchain.agent(ContexaAgent(
+    name="Reporter",
+    model=ContexaModel(provider="openai", model_id="gpt-4o"),
+    tools=[formatting_tool]
+))
+
+# Execute a multi-framework workflow
+research_result = await research_agent.run("Research quantum computing advances")
+analysis_result = await handoff(
+    from_agent=research_agent,
+    to_agent=analysis_agent,
+    message=f"Analyze these findings: {research_result}"
+)
+final_report = await handoff(
+    from_agent=analysis_agent,
+    to_agent=report_agent,
+    message=f"Format this analysis as a markdown report: {analysis_result}"
+)
+```
+
+### 5. Using the New Orchestration Features
 
 ```python
 from contexa_sdk.orchestration import AgentTeam, Message, Channel, TaskHandoff, SharedWorkspace
@@ -199,62 +282,7 @@ handoff = TaskHandoff(
 result = handoff.execute()
 ```
 
-### 4.1 Using MCP-Compatible Agents and Handoffs
-
-```python
-from contexa_sdk.orchestration import (
-    MCPAgent, registry, broker, mcp_handoff, 
-    register_contexa_agent, AgentState
-)
-
-# Create an MCP-compatible agent
-research_agent = MCPAgent(
-    agent_id="research-agent",
-    name="Research Agent",
-    description="Finds and summarizes information on topics",
-    capabilities=["research", "summarization"],
-    produces_streaming=True
-)
-
-# Define execution handler
-def research_handler(content):
-    query = content.get("input_data", {}).get("query", "")
-    return {
-        "summary": f"Research summary for '{query}'",
-        "sources": [{"title": "Source 1", "url": "https://example.com/1"}]
-    }
-
-# Set handler and activate agent
-research_agent.set_execution_handler(research_handler)
-research_agent.set_state(AgentState.ACTIVE)
-registry.register(research_agent)
-
-# Convert existing ContexaAgent to MCP agent
-mcp_analysis_agent = register_contexa_agent(analysis_agent)
-
-# Perform handoff between agents
-result = mcp_handoff(
-    source_agent=research_agent,
-    target_agent=mcp_analysis_agent,
-    task_description="Analyze the research findings",
-    input_data={"data": {"research_topic": "quantum computing"}}
-)
-
-# Streaming handoff for real-time updates
-streaming_results = mcp_handoff(
-    source_agent=research_agent,
-    target_agent=mcp_analysis_agent,
-    task_description="Analyze with progress updates",
-    input_data={"data": {"research_topic": "neural networks"}},
-    streaming=True
-)
-
-# Process streaming updates
-async for chunk in streaming_results:
-    print(f"Progress: {chunk.get('chunk', {}).get('progress', 0)}")
-```
-
-### 5. Deploy Your Agent
+### 6. Deploy Your Agent
 
 ```bash
 # Build and deploy your agent
@@ -277,6 +305,7 @@ For more detailed documentation, see the following guides:
 - [MCP-Compatible Agents](README_MCP_AGENTS.md)
 - [New Developer Onboarding](ONBOARDING.md)
 - [Framework Compatibility](FRAMEWORK_COMPATIBILITY.md)
+- [Google Adapter Migration Guide](docs/google_adapter_migration.md)
 
 ## Examples
 
@@ -292,6 +321,8 @@ The `examples/` directory contains various examples demonstrating different feat
 - [Orchestration Example](examples/orchestration_example.py)
 - [Agent Visualization](examples/agent_visualization.py)
 - [MCP-Compatible Handoffs](examples/mcp_handoff_example.py)
+- [Google Adapter Comparison](examples/google_adapter_comparison.py)
+- [Google Adapter Migration](examples/google_adapter_migration_example.py)
 
 ### Advanced AI Agent Examples
 

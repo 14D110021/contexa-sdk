@@ -345,24 +345,48 @@ class ConsoleMetricExporter(MetricExporter):
 
 
 class MetricsCollector:
-    """Collects and manages metrics.
+    """Collects, manages, and exports metrics for observability.
     
-    The MetricsCollector provides methods to record different types of metrics
-    (counters, gauges, histograms) and export them to one or more destinations.
+    The MetricsCollector is the central component of the metrics system, providing:
+    
+    1. Methods to record different types of metrics (counters, gauges, histograms)
+    2. Tagging/labeling capabilities for metric dimensions
+    3. Integration with multiple metric exporters for different destinations
+    4. Automatic periodic export of metrics to registered exporters
+    5. Utilities for measuring latency of operations
+    
+    The collector maintains metrics in memory and can export them on demand or
+    periodically to configured exporters. Multiple exporters can be registered
+    to send metrics to different observability systems simultaneously.
+    
+    This class is designed to be thread-safe and can be used across async and
+    synchronous code contexts.
+    
+    Attributes:
+        metrics: Dictionary mapping metric names to lists of recorded metrics
+        exporters: List of registered metric exporters
+        _export_task: Background task for periodic metric export
+        _is_exporting: Flag indicating if periodic export is active
     """
     
     def __init__(self):
-        """Initialize a metrics collector."""
+        """Initialize a metrics collector with empty metrics and exporters lists."""
         self.metrics: Dict[str, List[Metric]] = {}
         self.exporters: List[MetricExporter] = []
         self._export_task: Optional[asyncio.Task] = None
         self._is_exporting = False
     
     def add_exporter(self, exporter: MetricExporter) -> None:
-        """Add a metric exporter.
+        """Add a metric exporter to receive collected metrics.
+        
+        Exporters are responsible for sending metrics to external systems such as
+        Prometheus, OpenTelemetry collectors, logging systems, or cloud monitoring
+        services. Multiple exporters can be added to send metrics to different
+        destinations simultaneously.
         
         Args:
-            exporter: The exporter to add
+            exporter: The exporter instance to add. Must implement the
+                MetricExporter interface with an export() method.
         """
         self.exporters.append(exporter)
     
@@ -372,12 +396,23 @@ class MetricsCollector:
         value: Union[int, float] = 1, 
         tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Record a counter metric.
+        """Record a counter metric that tracks cumulative values.
+        
+        Counters are monotonically increasing values used for measuring things
+        like the number of requests, errors, or operations performed. They
+        should only increase or be reset to zero.
         
         Args:
-            name: Name of the counter
-            value: Value to increment by
-            tags: Optional tags/dimensions
+            name: Name of the counter metric (e.g., "agent.requests.total")
+            value: Amount to increment the counter by (default: 1)
+            tags: Optional dictionary of tag key/value pairs for adding
+                dimensions to the metric (e.g., {"agent_id": "abc123"})
+                
+        Example:
+            ```python
+            # Record a request with agent type dimension
+            metrics.record_counter("agent.requests.total", 1, {"agent_type": "search"})
+            ```
         """
         self._record_metric(name, value, MetricType.COUNTER, tags)
     
@@ -387,12 +422,22 @@ class MetricsCollector:
         value: Union[int, float], 
         tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Record a gauge metric.
+        """Record a gauge metric that represents a current value.
+        
+        Gauges are metrics that can increase and decrease, representing
+        current values like memory usage, active connections, or queue depth.
         
         Args:
-            name: Name of the gauge
-            value: Current value
-            tags: Optional tags/dimensions
+            name: Name of the gauge metric (e.g., "agent.memory.mb")
+            value: Current value of the gauge
+            tags: Optional dictionary of tag key/value pairs for adding
+                dimensions to the metric (e.g., {"agent_id": "abc123"})
+                
+        Example:
+            ```python
+            # Record current memory usage for an agent
+            metrics.record_gauge("agent.memory.mb", 128.5, {"agent_id": "abc123"})
+            ```
         """
         self._record_metric(name, value, MetricType.GAUGE, tags)
     
@@ -402,25 +447,48 @@ class MetricsCollector:
         value: Union[int, float], 
         tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Record a histogram metric.
+        """Record a histogram metric that tracks value distributions.
+        
+        Histograms track the distribution of values, useful for measuring
+        things like response times, payload sizes, or other values where
+        the distribution matters. They typically generate percentiles,
+        averages, and counts.
         
         Args:
-            name: Name of the histogram
-            value: Value to record
-            tags: Optional tags/dimensions
+            name: Name of the histogram metric (e.g., "agent.latency.ms")
+            value: Value to record in the histogram
+            tags: Optional dictionary of tag key/value pairs for adding
+                dimensions to the metric (e.g., {"operation": "search"})
+                
+        Example:
+            ```python
+            # Record response time for a query
+            metrics.record_histogram("agent.latency.ms", 45.2, {"query_type": "search"})
+            ```
         """
         self._record_metric(name, value, MetricType.HISTOGRAM, tags)
     
     @contextmanager
     def measure_latency(self, name: str, tags: Optional[Dict[str, str]] = None):
-        """Measure the execution time of a block of code.
+        """Measure the execution time of a block of code as a histogram metric.
+        
+        A context manager that automatically times the execution of the code
+        block and records it as a histogram metric in milliseconds.
         
         Args:
-            name: Name of the latency metric
-            tags: Optional tags/dimensions
-            
+            name: Name of the latency metric (e.g., "agent.run.latency.ms")
+            tags: Optional dictionary of tag key/value pairs for adding
+                dimensions to the metric (e.g., {"agent_id": "abc123"})
+                
         Yields:
             None
+            
+        Example:
+            ```python
+            # Measure how long a function takes to execute
+            with metrics.measure_latency("function.duration.ms", {"name": "process_data"}):
+                process_data()
+            ```
         """
         start_time = time.time()
         try:
@@ -431,7 +499,19 @@ class MetricsCollector:
             self.record_histogram(name, latency_ms, tags)
     
     def export_metrics(self) -> None:
-        """Export all collected metrics to registered exporters."""
+        """Export all collected metrics to registered exporters.
+        
+        This method manually triggers an export of all currently collected
+        metrics to all registered exporters. It's useful for on-demand
+        exports or when shutting down the application.
+        
+        If no exporters are registered, this method is a no-op.
+        
+        Note:
+            This method catches and suppresses exceptions from individual
+            exporters to ensure that a failure in one exporter doesn't
+            prevent other exporters from receiving metrics.
+        """
         if not self.exporters:
             return
             
@@ -449,10 +529,18 @@ class MetricsCollector:
                 pass
     
     async def start_periodic_export(self, interval_seconds: float = 15.0) -> None:
-        """Start periodic export of metrics.
+        """Start periodic export of metrics at specified intervals.
+        
+        Begins an asynchronous task that exports metrics at regular intervals.
+        This is the recommended way to export metrics for ongoing monitoring.
         
         Args:
-            interval_seconds: Time between exports in seconds
+            interval_seconds: Time between exports in seconds (default: 15.0)
+                
+        Note:
+            If periodic export is already running, this method is a no-op.
+            The task runs until stop_periodic_export() is called or the
+            application shuts down.
         """
         if self._is_exporting:
             return
@@ -461,7 +549,15 @@ class MetricsCollector:
         self._export_task = asyncio.create_task(self._export_loop(interval_seconds))
     
     async def stop_periodic_export(self) -> None:
-        """Stop periodic export of metrics."""
+        """Stop periodic export of metrics.
+        
+        Cancels the background task that periodically exports metrics.
+        Any metrics collected after this call will not be automatically
+        exported until start_periodic_export() is called again.
+        
+        This method is asynchronous and waits for the export task to
+        be fully cancelled before returning.
+        """
         self._is_exporting = False
         if self._export_task:
             self._export_task.cancel()
@@ -472,7 +568,16 @@ class MetricsCollector:
             self._export_task = None
     
     def shutdown(self) -> None:
-        """Shutdown the metrics collector and all exporters."""
+        """Shutdown the metrics collector and all exporters.
+        
+        Performs a clean shutdown of the metrics system:
+        1. Cancels any running periodic export task
+        2. Calls shutdown() on all registered exporters
+        3. Clears the list of exporters
+        
+        This method should be called when the application is shutting down
+        to ensure proper cleanup of resources.
+        """
         # Cancel any running export tasks
         if self._export_task and not self._export_task.done():
             self._export_task.cancel()
@@ -490,13 +595,16 @@ class MetricsCollector:
         metric_type: MetricType, 
         tags: Optional[Dict[str, str]] = None
     ) -> None:
-        """Record a metric.
+        """Record a metric of any type with name, value and optional tags.
+        
+        Internal method used by the public record_* methods to store a
+        metric in the collector's memory.
         
         Args:
             name: Name of the metric
             value: Value of the metric
-            metric_type: Type of the metric
-            tags: Optional tags/dimensions
+            metric_type: Type of the metric (COUNTER, GAUGE, HISTOGRAM, SUMMARY)
+            tags: Optional dictionary of tag key/value pairs
         """
         metric = Metric(
             name=name,

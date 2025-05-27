@@ -1,4 +1,8 @@
-"""Resource tracking module for monitoring and limiting agent resource usage."""
+"""Resource tracking module for monitoring and limiting agent resource usage.
+
+This module provides tools to track and limit resource consumption by agents,
+ensuring they operate within defined constraints and prevent resource exhaustion.
+"""
 
 from enum import Enum
 from typing import Dict, Any, List, Optional, Union
@@ -86,39 +90,61 @@ class ResourceTracker:
     """Tracks and limits resource usage for agents.
     
     The ResourceTracker monitors resource usage for agents and enforces
-    resource limits. It can track:
-    - Memory usage
-    - CPU usage
-    - Token usage (for LLM calls)
-    - Request rates
-    - Bandwidth usage
-    - Custom metrics
+    resource limits to prevent resource exhaustion and ensure fair resource
+    allocation in multi-agent environments. It supports tracking various
+    resource types including:
+    
+    - Memory usage (RAM consumption)
+    - CPU usage (processor utilization)
+    - Token usage (for LLM API calls)
+    - Request rates (API call frequency)
+    - Bandwidth usage (network traffic)
+    - Custom metrics (user-defined resources)
+    
+    This class provides methods to register agents, update and retrieve their
+    resource usage, set and enforce resource limits, and handle constraint
+    violations with appropriate exceptions.
+    
+    Attributes:
+        agent_usage: Dictionary mapping agent IDs to their ResourceUsage
+        agent_limits: Dictionary mapping agent IDs to their ResourceLimits
     """
     
     def __init__(self):
-        """Initialize the resource tracker."""
+        """Initialize the resource tracker with empty tracking dictionaries."""
         self.agent_usage: Dict[str, ResourceUsage] = {}
         self.agent_limits: Dict[str, ResourceLimits] = {}
     
     def register_agent(self, agent_id: str, limits: Optional[ResourceLimits] = None) -> None:
         """Register an agent for resource tracking.
         
+        Adds an agent to the resource tracking system with optional resource limits.
+        If no limits are provided, default unlimited resources are assumed. This method
+        must be called before updating or retrieving resource usage for an agent.
+        
         Args:
-            agent_id: The ID of the agent to track
-            limits: Optional resource limits for the agent
+            agent_id: The unique identifier of the agent to track
+            limits: Optional resource limits for the agent. If None, default
+                unlimited ResourceLimits will be used.
         """
         self.agent_usage[agent_id] = ResourceUsage()
         self.agent_limits[agent_id] = limits or ResourceLimits()
     
     def update_usage(self, agent_id: str, resource_usage: ResourceUsage) -> None:
-        """Update resource usage for an agent.
+        """Update resource usage for an agent and check against limits.
+        
+        Updates the recorded resource usage for an agent and checks if any
+        resource limits have been exceeded. If the agent is not yet registered,
+        it will be automatically registered with default limits.
         
         Args:
-            agent_id: The ID of the agent
-            resource_usage: The updated resource usage
+            agent_id: The unique identifier of the agent
+            resource_usage: The updated resource usage metrics to record
             
         Raises:
-            ResourceConstraintViolation: If a resource limit is exceeded
+            ResourceConstraintViolation: If any resource limit is exceeded.
+                This exception includes details about which resource was exceeded,
+                the current value, and the limit value.
         """
         if agent_id not in self.agent_usage:
             self.register_agent(agent_id)
@@ -133,14 +159,17 @@ class ResourceTracker:
     def get_usage(self, agent_id: str) -> ResourceUsage:
         """Get current resource usage for an agent.
         
+        Retrieves the most recently recorded resource usage metrics for
+        the specified agent.
+        
         Args:
-            agent_id: The ID of the agent
+            agent_id: The unique identifier of the agent
             
         Returns:
-            The current resource usage
+            The current ResourceUsage object containing all tracked metrics
             
         Raises:
-            ValueError: If the agent is not registered
+            ValueError: If the agent is not registered for resource tracking
         """
         if agent_id not in self.agent_usage:
             raise ValueError(f"Agent {agent_id} not registered for resource tracking")
@@ -148,11 +177,16 @@ class ResourceTracker:
         return self.agent_usage[agent_id]
     
     def set_limits(self, agent_id: str, limits: ResourceLimits) -> None:
-        """Set resource limits for an agent.
+        """Set or update resource limits for an agent.
+        
+        Establishes resource constraints for an agent. These limits will be
+        enforced when resource usage is updated. If the agent is not yet
+        registered, it will be automatically registered.
         
         Args:
-            agent_id: The ID of the agent
-            limits: The resource limits to set
+            agent_id: The unique identifier of the agent
+            limits: The ResourceLimits object defining the constraints for
+                each tracked resource type
         """
         if agent_id not in self.agent_limits:
             self.register_agent(agent_id, limits)
@@ -162,14 +196,16 @@ class ResourceTracker:
     def get_limits(self, agent_id: str) -> ResourceLimits:
         """Get current resource limits for an agent.
         
+        Retrieves the current resource limits configured for the specified agent.
+        
         Args:
-            agent_id: The ID of the agent
+            agent_id: The unique identifier of the agent
             
         Returns:
-            The current resource limits
+            The current ResourceLimits object containing all resource constraints
             
         Raises:
-            ValueError: If the agent is not registered
+            ValueError: If the agent is not registered for resource tracking
         """
         if agent_id not in self.agent_limits:
             raise ValueError(f"Agent {agent_id} not registered for resource tracking")
@@ -177,15 +213,20 @@ class ResourceTracker:
         return self.agent_limits[agent_id]
     
     def _check_limits(self, agent_id: str, usage: ResourceUsage, limits: ResourceLimits) -> None:
-        """Check if resource usage exceeds limits.
+        """Check if resource usage exceeds limits and raise exceptions if needed.
+        
+        Internal method that compares current resource usage against defined limits
+        and raises appropriate exceptions when limits are exceeded.
         
         Args:
-            agent_id: The ID of the agent
-            usage: The current resource usage
-            limits: The resource limits to check
+            agent_id: The unique identifier of the agent
+            usage: The current resource usage metrics to check
+            limits: The resource limits to check against
             
         Raises:
-            ResourceConstraintViolation: If a resource limit is exceeded
+            ResourceConstraintViolation: If any resource limit is exceeded.
+                This provides details about which specific resource was exceeded,
+                by how much, and what the limit was.
         """
         # Check memory limit
         if limits.max_memory_mb is not None and usage.memory_mb > limits.max_memory_mb:

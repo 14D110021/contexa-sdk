@@ -67,8 +67,43 @@ class NodeStatus(Enum):
 class ClusterAgentRuntime(AgentRuntime):
     """Distributed implementation of the Agent Runtime interface.
     
-    This runtime manages agents running across multiple nodes in a cluster.
-    It provides coordination, load balancing, and failover capabilities.
+    This runtime manages agents running across multiple nodes in a cluster,
+    providing a scalable, fault-tolerant environment for agent execution.
+    The architecture follows a coordinator-worker pattern where one node acts
+    as the coordinator responsible for:
+    
+    - Maintaining a global view of all nodes and agents
+    - Performing load balancing when placing agents
+    - Handling node failure detection and recovery
+    - Routing agent requests to the appropriate node
+    - Orchestrating agent migration when nodes fail
+    
+    Worker nodes execute agents locally and communicate with the coordinator
+    for synchronization. The runtime provides:
+    
+    - Transparent distribution: Clients interact with agents the same way
+      regardless of which node they're running on
+    - Automatic failover: If a node fails, its agents can be migrated to
+      other healthy nodes
+    - Load balancing: Agents are distributed across nodes based on resource
+      availability and constraints
+    - Synchronization: Agent state is synchronized across the cluster
+    - Scalability: New nodes can join the cluster dynamically
+    
+    Both coordinator and worker nodes can run agents locally, making efficient
+    use of all available resources in the cluster.
+    
+    Attributes:
+        _config: Runtime configuration settings
+        _status: Current operational status of the runtime
+        _node_id: Unique identifier for this node
+        _node_endpoint: API endpoint for this node
+        _is_coordinator: Whether this node is the coordinator
+        _coordinator_endpoint: API endpoint for the coordinator node
+        _nodes: Dictionary of all nodes in the cluster
+        _agent_locations: Mapping of agent IDs to their node locations
+        _local_agents: Agents running locally on this node
+        _agent_status: Status of locally running agents
     """
     
     def __init__(
@@ -81,12 +116,26 @@ class ClusterAgentRuntime(AgentRuntime):
     ):
         """Initialize a cluster agent runtime.
         
+        Sets up a node in the agent cluster with either coordinator or worker
+        functionality. Each node can run agents locally while participating
+        in the distributed runtime environment.
+        
         Args:
-            config: Runtime configuration
-            coordinator_endpoint: API endpoint for the coordinator node
-            is_coordinator: Whether this instance is the coordinator
-            node_id: ID for this node. If None, a UUID is generated.
-            node_endpoint: API endpoint for this node
+            config: Runtime configuration for resource limits, state persistence, etc.
+                If None, default configuration is used.
+            coordinator_endpoint: API endpoint for the coordinator node. Required for
+                worker nodes, ignored for the coordinator node.
+            is_coordinator: Whether this instance should act as the cluster coordinator.
+                Only one node in the cluster should be designated as coordinator.
+            node_id: Unique identifier for this node. If None, a UUID is generated.
+                This should be globally unique across the cluster.
+            node_endpoint: API endpoint for this node, used for inter-node communication.
+                Must be reachable by other nodes in the cluster.
+                
+        Note:
+            If is_coordinator is True, this node will manage the cluster.
+            If is_coordinator is False, coordinator_endpoint must be provided
+            to connect to an existing coordinator.
         """
         self._config = config or AgentRuntimeConfig()
         self._status = AgentRuntimeStatus.INITIALIZING

@@ -105,7 +105,35 @@ openai_agent = openai.agent(contexa_agent)
 
 OpenAI Agents SDK was rebranded and its imports changed from `openai_agents` to `agents`. The primary way to create tools also changed to use the `@function_tool` decorator pattern. Our adapter has been updated to reflect these changes.
 
-## Google ADK Integration
+## Google Adapter Integration
+
+Contexa SDK provides two Google adapter implementations:
+
+### Google GenAI Integration
+
+Our Google GenAI integration provides compatibility with Google's Generative AI SDK (v0.3.0+), for working directly with Gemini models. Our adapter supports:
+
+- Converting Contexa tools to Google GenAI function declarations
+- Adapting Contexa models to Google GenAI model configurations
+- Creating Google GenAI agents with function calling capabilities
+- Streamlined access to Gemini models
+
+### Key Components (GenAI)
+
+```python
+from contexa_sdk.adapters.google import genai_tool, genai_model, genai_agent
+
+# Convert Contexa tool to Google GenAI function declaration
+genai_tool_obj = genai_tool(contexa_tool)
+
+# Convert Contexa model to Google GenAI model configuration
+genai_model_obj = genai_model(contexa_model)
+
+# Convert Contexa agent to Google GenAI agent
+genai_agent_obj = genai_agent(contexa_agent)
+```
+
+### Google ADK Integration
 
 Our Google ADK integration provides compatibility with Google's Agent Development Kit (v0.5.0+), a code-first toolkit for building sophisticated AI agents. Our adapter supports:
 
@@ -115,18 +143,31 @@ Our Google ADK integration provides compatibility with Google's Agent Developmen
 - Supporting multi-agent composition via ADK's agent hierarchies
 - Leveraging ADK's built-in evaluation and deployment capabilities
 
-### Key Components
+### Key Components (ADK)
+
+```python
+from contexa_sdk.adapters.google import adk_tool, adk_model, adk_agent
+
+# Convert Contexa tool to Google ADK tool
+adk_tool_obj = adk_tool(contexa_tool)
+
+# Convert Contexa model to Google ADK model configuration
+adk_model_obj = adk_model(contexa_model)
+
+# Convert Contexa agent to Google ADK agent
+adk_agent_obj = adk_agent(contexa_agent)
+```
+
+### Backward Compatibility
+
+For backward compatibility, we still support the generic, non-prefixed imports:
 
 ```python
 from contexa_sdk.adapters import google
 
-# Convert Contexa tool to Google ADK tool
+# These now use the GenAI implementations by default
 google_tool = google.tool(contexa_tool)
-
-# Convert Contexa model to Google ADK model configuration
 google_model = google.model(contexa_model)
-
-# Convert Contexa agent to Google ADK agent
 google_agent = google.agent(contexa_agent)
 ```
 
