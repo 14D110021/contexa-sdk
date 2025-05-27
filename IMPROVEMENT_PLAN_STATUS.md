@@ -136,21 +136,27 @@ This document tracks the progress of implementing improvements to the Google ada
 
 ### In Progress MCP Tasks
 
-- [ ] **MCP Feature Handlers** - Specialized handlers for each MCP feature
+**📋 See detailed plan in: `MCP_COMPLETION_PLAN.md`**
+
+- [ ] **Sprint 1: MCP Feature Handlers** - Specialized handlers for each MCP feature (HIGH PRIORITY)
   - ResourceHandler for resource management and subscriptions
   - ToolHandler for tool execution and management
   - PromptHandler for prompt templates and workflows
   - SamplingHandler for LLM sampling requests
-- [ ] **MCP Security and Authentication** - Enterprise-grade security
+- [ ] **Sprint 2: MCP Client Integration** - Seamless Contexa integration (HIGH PRIORITY)
+  - MCPIntegration for automatic agent-to-MCP conversion
+  - integrate_mcp_server_with_agent convenience function
+- [ ] **Sprint 3: MCP Client Proxies** - Remote capability access (HIGH PRIORITY)
+  - MCPToolProxy, MCPResourceProxy, MCPPromptProxy for remote capabilities
+- [ ] **Sprint 4: MCP Security and Authentication** - Enterprise-grade security (MEDIUM PRIORITY)
   - SecurityManager with OAuth 2.1 support
   - ConsentManager for user authorization
   - AuthenticationManager for secure connections
   - Rate limiting and access controls
-- [ ] **MCP Integration Components** - Seamless Contexa integration
-  - MCPIntegration for automatic agent-to-MCP conversion
-  - MCPToolProxy, MCPResourceProxy, MCPPromptProxy for remote capabilities
+- [ ] **Sprint 5: MCP Client Discovery** - Service discovery (MEDIUM PRIORITY)
+  - MCPServerDiscovery for finding available servers
+  - MCPRegistry for server registration and lookup
   - Agent discovery and registry integration
-  - Automatic capability mapping
 
 ### Planned MCP Tasks
 
