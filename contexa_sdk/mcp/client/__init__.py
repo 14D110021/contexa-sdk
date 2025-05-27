@@ -15,8 +15,13 @@ The implementation follows the MCP specification v2025-03-26 and includes:
 
 from .mcp_client import MCPClient, MCPClientConfig
 from .integration import MCPIntegration, integrate_mcp_server_with_agent, create_multi_agent_mcp_server
+from .proxy import (
+    MCPProxy, MCPProxyConfig, MCPProxyError, MCPConnectionError, 
+    MCPTimeoutError, MCPServerError, MCPToolProxy, MCPResourceProxy, 
+    MCPPromptProxy, MCPResource, MCPPromptTemplate
+)
+from .proxy_factory import MCPProxyFactory, MCPProxyManager, create_mcp_proxy_factory
 # from .discovery import MCPServerDiscovery, MCPRegistry  # TODO: Implement in Sprint 5
-# from .proxy import MCPToolProxy, MCPResourceProxy, MCPPromptProxy  # TODO: Implement in Sprint 3
 
 __all__ = [
     'MCPClient',
@@ -24,9 +29,23 @@ __all__ = [
     'MCPIntegration',
     'integrate_mcp_server_with_agent',
     'create_multi_agent_mcp_server',
+    
+    # Proxy components - ✅ IMPLEMENTED in Sprint 3
+    'MCPProxy',
+    'MCPProxyConfig',
+    'MCPProxyError',
+    'MCPConnectionError',
+    'MCPTimeoutError', 
+    'MCPServerError',
+    'MCPToolProxy',
+    'MCPResourceProxy',
+    'MCPPromptProxy',
+    'MCPResource',
+    'MCPPromptTemplate',
+    'MCPProxyFactory',
+    'MCPProxyManager',
+    'create_mcp_proxy_factory',
+    
     # 'MCPServerDiscovery',  # TODO: Implement in Sprint 5
     # 'MCPRegistry',  # TODO: Implement in Sprint 5
-    # 'MCPToolProxy',  # TODO: Implement in Sprint 3
-    # 'MCPResourceProxy',  # TODO: Implement in Sprint 3
-    # 'MCPPromptProxy',  # TODO: Implement in Sprint 3
 ] 
