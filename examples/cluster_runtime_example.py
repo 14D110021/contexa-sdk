@@ -11,8 +11,8 @@ import time
 from typing import Dict, List, Optional, Any
 
 from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.core.memory import DefaultMemory
-from contexa_sdk.core.model import Model
+from contexa_sdk.core.agent import AgentMemory
+from contexa_sdk.core.model import ContexaModel
 from contexa_sdk.core.tool import Tool, ToolParameter
 from contexa_sdk.runtime import (
     AgentRuntimeConfig,
@@ -203,7 +203,7 @@ async def run_example():
             description="Agent running on the coordinator node",
             model=MockModel(node_id="coordinator-1"),
             tools=[CalculatorTool()],
-            memory=DefaultMemory()
+            memory=AgentMemory()
         )
         
         coordinator_agent_id = await coordinator.register_agent(coordinator_agent)
@@ -215,7 +215,7 @@ async def run_example():
             description="Agent running on worker node 1",
             model=MockModel(node_id="worker-1"),
             tools=[CalculatorTool()],
-            memory=DefaultMemory()
+            memory=AgentMemory()
         )
         
         worker1_agent_id = await worker1.register_agent(worker1_agent)
@@ -226,7 +226,7 @@ async def run_example():
             description="Agent running on worker node 2",
             model=MockModel(node_id="worker-2"),
             tools=[CalculatorTool()],
-            memory=DefaultMemory()
+            memory=AgentMemory()
         )
         
         worker2_agent_id = await worker2.register_agent(worker2_agent)

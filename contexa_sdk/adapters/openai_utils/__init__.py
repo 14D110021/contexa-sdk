@@ -4,7 +4,7 @@ This module provides functions to convert between Contexa objects and OpenAI obj
 as well as utilities for managing OpenAI threads and assistants.
 """
 
-from contexa_sdk.adapters.openai.thread import (
+from contexa_sdk.adapters.openai_utils.thread import (
     get_thread_for_agent,
     memory_to_thread,
     thread_to_memory,

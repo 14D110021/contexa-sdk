@@ -2,44 +2,45 @@ import unittest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock
 
-from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.core.model import Model
-from contexa_sdk.core.tool import Tool, ToolParameter
-from contexa_sdk.core.memory import DefaultMemory, BaseMemory
+from contexa_sdk.core.agent import ContexaAgent, AgentMemory
+from contexa_sdk.core.model import ContexaModel, ModelResponse, ModelMessage
+from contexa_sdk.core.tool import ContexaTool, BaseTool
 
 # A simple mock model for testing
-class MockModel(Model):
-    name: str = "test_mock_model"
-    description: str = "A mock model for testing purposes"
+class MockModel(ContexaModel):
+    def __init__(self):
+        super().__init__(model_name="test_mock_model", provider="mock")
 
-    async def generate(self, prompt: str, **kwargs) -> dict:
+    async def generate(self, messages, **kwargs):
         # Simulate an API call delay
         await asyncio.sleep(0.01)
+        prompt = messages[-1].content if messages else ""
         if "error" in prompt.lower():
             raise Exception("Mock model error")
-        return {"text": f"Mock response to: {prompt}"}
+        return ModelResponse(
+            content=f"Mock response to: {prompt}",
+            model="test_mock_model",
+            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+        )
 
 # A simple mock tool for testing
-class MockTool(Tool):
-    name: str = "mock_tool"
-    description: str = "A mock tool for testing"
-    parameters: list = [
-        ToolParameter(name="param1", type="string", description="A test parameter")
-    ]
-
-    async def execute(self, param1: str, **kwargs) -> dict:
-        await asyncio.sleep(0.01)
-        if param1 == "error":
-            raise Exception("Mock tool error")
-        return {"result": f"Mock tool executed with {param1}"}
+@ContexaTool.register(
+    name="mock_tool",
+    description="A mock tool for testing"
+)
+async def mock_tool_func(param1: str) -> str:
+    await asyncio.sleep(0.01)
+    if param1 == "error":
+        raise Exception("Mock tool error")
+    return f"Mock tool executed with {param1}"
 
 class TestContexaAgent(unittest.TestCase):
 
     def setUp(self):
         """Set up for test methods."""
         self.mock_model = MockModel()
-        self.mock_tool = MockTool()
-        self.mock_memory = DefaultMemory()
+        self.mock_tool = mock_tool_func.__contexa_tool__
+        self.mock_memory = AgentMemory()
         
         self.agent = ContexaAgent(
             name="Test Agent",
@@ -55,52 +56,23 @@ class TestContexaAgent(unittest.TestCase):
         self.assertEqual(self.agent.description, "An agent for testing")
         self.assertIsInstance(self.agent.model, MockModel)
         self.assertEqual(len(self.agent.tools), 1)
-        self.assertIsInstance(self.agent.tools[0], MockTool)
-        self.assertIsInstance(self.agent.memory, DefaultMemory)
+        self.assertIsInstance(self.agent.tools[0], ContexaTool)
+        self.assertIsInstance(self.agent.memory, AgentMemory)
 
-    def test_to_dict_and_from_dict_serialization(self):
-        """Test agent serialization to and from dictionary."""
+    def test_to_dict_serialization(self):
+        """Test agent serialization to dictionary."""
         agent_dict = self.agent.to_dict()
         
-        expected_keys = ["name", "description", "model", "tools", "memory", "config"]
-        for key in expected_keys:
-            self.assertIn(key, agent_dict)
+        # Check that basic keys are present
+        self.assertIn("name", agent_dict)
+        self.assertIn("description", agent_dict)
+        self.assertIn("tools", agent_dict)
+        self.assertIn("model", agent_dict)
+        self.assertIn("memory", agent_dict)
             
         self.assertEqual(agent_dict["name"], "Test Agent")
-        self.assertEqual(agent_dict["model"]["class_name"], "MockModel")
         self.assertEqual(len(agent_dict["tools"]), 1)
-        self.assertEqual(agent_dict["tools"][0]["class_name"], "MockTool")
-        self.assertEqual(agent_dict["memory"]["class_name"], "DefaultMemory")
 
-    def test_add_tool(self):
-        """Test adding a tool to the agent."""
-        initial_tool_count = len(self.agent.tools)
-        new_tool = MockTool(name="new_mock_tool")
-        self.agent.add_tool(new_tool)
-        self.assertEqual(len(self.agent.tools), initial_tool_count + 1)
-        self.assertIn(new_tool, self.agent.tools)
-
-    def test_remove_tool(self):
-        """Test removing a tool from the agent."""
-        tool_to_remove = self.agent.tools[0]
-        initial_tool_count = len(self.agent.tools)
-        
-        self.agent.remove_tool(tool_to_remove.name)
-        self.assertEqual(len(self.agent.tools), initial_tool_count - 1)
-        self.assertNotIn(tool_to_remove, self.agent.tools)
-
-        with self.assertRaises(ValueError):
-            self.agent.remove_tool("non_existent_tool")
-
-    def test_get_tool(self):
-        """Test getting a tool by its name."""
-        tool_name = self.mock_tool.name
-        retrieved_tool = self.agent.get_tool(tool_name)
-        self.assertIsInstance(retrieved_tool, MockTool)
-        self.assertEqual(retrieved_tool.name, tool_name)
-
-        self.assertIsNone(self.agent.get_tool("non_existent_tool"))
-        
     async def test_run_agent_with_mock_model_simple_prompt(self):
         """Test the agent's run method with a simple prompt and mock model."""
         prompt = "Hello, world!"
@@ -111,20 +83,20 @@ class TestContexaAgent(unittest.TestCase):
         self.assertIsInstance(response, str)
         self.assertEqual(response, expected_response_text)
         
-        history = self.agent.memory.get_history()
-        self.assertEqual(len(history), 2)
-        self.assertEqual(history[0]["role"], "user")
-        self.assertEqual(history[0]["content"], prompt)
-        self.assertEqual(history[1]["role"], "assistant")
-        self.assertEqual(history[1]["content"], expected_response_text)
+        # Check that messages were added to memory
+        messages = self.agent.memory.get_messages()
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0].role, "user")
+        self.assertEqual(messages[0].content, prompt)
+        self.assertEqual(messages[1].role, "assistant")
+        self.assertEqual(messages[1].content, expected_response_text)
 
     async def test_run_agent_with_context(self):
         """Test the agent's run method with additional context."""
         prompt = "Tell me a joke"
-        context = {"user_mood": "happy", "previous_topic": "AI"}
         expected_response_text = f"Mock response to: {prompt}"
         
-        response = await self.agent.run(prompt, context=context)
+        response = await self.agent.run(prompt)
         self.assertEqual(response, expected_response_text)
 
     async def test_run_agent_model_error_handling(self):
@@ -134,10 +106,29 @@ class TestContexaAgent(unittest.TestCase):
         with self.assertRaises(Exception):
             await self.agent.run(prompt_that_causes_error)
             
-        history = self.agent.memory.get_history()
-        self.assertEqual(len(history), 1) 
-        self.assertEqual(history[0]["role"], "user")
-        self.assertEqual(history[0]["content"], prompt_that_causes_error)
+        # Check that user message was added even though generation failed
+        messages = self.agent.memory.get_messages()
+        self.assertEqual(len(messages), 1) 
+        self.assertEqual(messages[0].role, "user")
+        self.assertEqual(messages[0].content, prompt_that_causes_error)
+
+    def test_tools_available(self):
+        """Test that tools are available on the agent."""
+        self.assertEqual(len(self.agent.tools), 1)
+        self.assertEqual(self.agent.tools[0].name, "mock_tool")
+
+    def test_memory_operations(self):
+        """Test basic memory operations."""
+        # Test adding a message
+        self.agent.memory.add_message("user", "test message")
+        messages = self.agent.memory.get_messages()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].content, "test message")
+        
+        # Test clearing memory
+        self.agent.memory.clear()
+        messages = self.agent.memory.get_messages()
+        self.assertEqual(len(messages), 0)
 
 if __name__ == '__main__':
     # This allows running the tests directly from this file

@@ -25,7 +25,37 @@ except ImportError:
     pass
 
 try:
-    from contexa_sdk.adapters import openai
+    # Import OpenAI adapter functions directly from openai_adapter
+    import sys
+    import types
+    from contexa_sdk.adapters.openai_adapter import (
+        tool as openai_tool,
+        model as openai_model,
+        agent as openai_agent,
+        prompt as openai_prompt,
+        handoff as openai_handoff,
+        adapt_assistant as openai_adapt_assistant,
+        adapt_agent as openai_adapt_agent,
+        OpenAIAdapter,
+        __adapter_version__ as openai_adapter_version
+    )
+    
+    # Create an openai module
+    openai = types.ModuleType('contexa_sdk.adapters.openai')
+    
+    # Add all the functions to the module
+    openai.tool = openai_tool
+    openai.model = openai_model
+    openai.agent = openai_agent
+    openai.prompt = openai_prompt
+    openai.handoff = openai_handoff
+    openai.adapt_assistant = openai_adapt_assistant
+    openai.adapt_agent = openai_adapt_agent
+    openai.OpenAIAdapter = OpenAIAdapter
+    openai.__adapter_version__ = openai_adapter_version
+    
+    # Add the module to sys.modules
+    sys.modules['contexa_sdk.adapters.openai'] = openai
 except ImportError:
     pass
 

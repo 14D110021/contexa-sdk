@@ -12,8 +12,8 @@ import time
 from typing import Dict, List, Optional, Any
 
 from contexa_sdk.core.agent import ContexaAgent
-from contexa_sdk.core.memory import DefaultMemory
-from contexa_sdk.core.model import Model
+from contexa_sdk.core.agent import AgentMemory
+from contexa_sdk.core.model import ContexaModel
 from contexa_sdk.core.tool import Tool, ToolParameter
 from contexa_sdk.runtime import (
     AgentRuntimeConfig,
@@ -92,42 +92,48 @@ class CalculatorTool(Tool):
 
 
 # Create a mock model for the agent
-class MockModel(Model):
+class MockModel(ContexaModel):
     """Mock model implementation that returns predefined responses."""
-    
-    name: str = "mock-model"
-    description: str = "Mock model for testing"
     
     def __init__(self):
         """Initialize the mock model."""
-        super().__init__()
+        super().__init__(model_name="mock-model", provider="mock")
         self.response_delay = 0.5  # Simulate processing time
     
     async def generate(
-        self, prompt: str, **kwargs
-    ) -> Dict[str, Any]:
-        """Generate a response for the given prompt.
+        self, messages: List[ModelMessage], **kwargs
+    ) -> ModelResponse:
+        """Generate a response for the given messages.
         
         Args:
-            prompt: The prompt to generate a response for
+            messages: The conversation messages
             
         Returns:
-            Dict with the generated text
+            ModelResponse with the generated content
         """
         # Simulate processing time
         await asyncio.sleep(self.response_delay)
         
+        # Get the last user message
+        prompt = messages[-1].content if messages else ""
+        
         # Generate a mock response
         if "weather" in prompt.lower():
-            return {"text": "It's sunny today with a high of 75°F."}
+            content = "It's sunny today with a high of 75°F."
         elif "hello" in prompt.lower() or "hi" in prompt.lower():
-            return {"text": "Hello! How can I assist you today?"}
+            content = "Hello! How can I assist you today?"
         elif "calculator" in prompt.lower() or "math" in prompt.lower():
-            return {"text": "I can help with math. Use the calculator tool with 'operation', 'a', and 'b' parameters."}
+            content = "I can help with math. Use the calculator tool with 'operation', 'a', and 'b' parameters."
         elif "help" in prompt.lower():
-            return {"text": "I'm a simple agent. You can ask about the weather, say hello, or use the calculator tool."}
+            content = "I'm a simple agent. You can ask about the weather, say hello, or use the calculator tool."
         else:
-            return {"text": "I'm not sure how to respond to that. Try asking about the weather or using the calculator tool."}
+            content = "I'm not sure how to respond to that. Try asking about the weather or using the calculator tool."
+        
+        return ModelResponse(
+            content=content,
+            model="mock-model",
+            usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+        )
 
 
 async def run_example():
@@ -167,7 +173,7 @@ async def run_example():
             description="An assistant that can perform basic math operations",
             model=MockModel(),
             tools=[CalculatorTool()],
-            memory=DefaultMemory()
+            memory=AgentMemory()
         )
         
         # Register the agent with the runtime

@@ -84,34 +84,23 @@ pip install contexa-sdk[all]
 
 ### Google Adapter Installation
 
-Contexa SDK provides two separate Google adapters with distinct capabilities, which can be installed individually or together:
+Contexa SDK provides Google GenAI integration for Gemini models:
 
 ```bash
-# For Google GenAI (Gemini) support only
+# For Google GenAI (Gemini) support
 pip install contexa-sdk[google-genai]
 
-# For Google Agent Development Kit (ADK) support only
-pip install contexa-sdk[google-adk]
-
-# For both Google adapters
+# Alternative installation
 pip install contexa-sdk[google]
 ```
 
-#### Choosing the Right Google Adapter
+#### Google GenAI Adapter
 
-1. **Google GenAI** (`google-genai`): 
-   - Simpler, lighter weight integration with Google's Generative AI SDK
-   - Direct access to Gemini models
-   - Streamlined for question-answering and function-calling
-   - Best for single-agent systems with straightforward task requirements
-   - Smaller dependency footprint: only requires `google-generativeai>=0.3.0`
-
-2. **Google ADK** (`google-adk`): 
-   - Integration with Google's Agent Development Kit
-   - More advanced reasoning capabilities and multi-step planning
-   - Support for complex agent hierarchies and sophisticated workflows
-   - Best for complex multi-agent systems requiring advanced reasoning
-   - Requires `google-adk>=0.5.0`
+**Google GenAI** (`google-genai`): 
+- Direct integration with Google's Generative AI SDK
+- Access to Gemini models (gemini-pro, gemini-pro-vision)
+- Streamlined for question-answering and function-calling
+- Lightweight dependency footprint: only requires `google-generativeai>=0.3.0`
 
 Each adapter can be imported separately with specific prefixes:
 

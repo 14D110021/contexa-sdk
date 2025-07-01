@@ -17,13 +17,13 @@ Key features:
 - Supporting OpenAI Assistants API integration through threads
 
 Usage:
-    from contexa_sdk.adapters import openai
+    from contexa_sdk.adapters.openai import tool, agent
     
     # Convert a Contexa tool to an OpenAI tool
-    oa_tool = openai.tool(my_contexa_tool)
+    oa_tool = tool(my_contexa_tool)
     
     # Convert a Contexa agent to an OpenAI agent
-    oa_agent = openai.agent(my_contexa_agent)
+    oa_agent = agent(my_contexa_agent)
     
     # Run the OpenAI agent
     result = await oa_agent.execute("What's the weather in Paris?")
@@ -45,7 +45,7 @@ from contexa_sdk.core.agent import ContexaAgent, HandoffData
 from contexa_sdk.core.prompt import ContexaPrompt
 
 # Import thread management
-from contexa_sdk.adapters.openai.thread import (
+from contexa_sdk.adapters.openai_utils.thread import (
     get_thread_for_agent,
     memory_to_thread,
     thread_to_memory,
@@ -103,7 +103,7 @@ class OpenAIAdapter(BaseAdapter):
         Example:
             ```python
             from contexa_sdk.core.tool import ContexaTool
-            from contexa_sdk.adapters import openai
+            from contexa_sdk.adapters.openai_adapter import tool
             
             @ContexaTool.register(
                 name="weather",
@@ -113,7 +113,7 @@ class OpenAIAdapter(BaseAdapter):
                 return f"Weather in {location} is sunny"
                 
             # Convert to OpenAI tool
-            oa_tool = openai.tool(get_weather)
+            oa_tool = tool(get_weather)
             ```
         """
         try:
@@ -123,17 +123,29 @@ class OpenAIAdapter(BaseAdapter):
                 "OpenAI Agents SDK not found. Install with `pip install openai-agents`."
             )
             
-        # Create a wrapper function that will call our tool
-        @function_tool
-        async def contexa_tool(**kwargs):
-            """Tool description from Contexa."""
-            return await tool(**kwargs)
-            
-        # Update the tool metadata to match the original Contexa tool
-        contexa_tool.__name__ = tool.name
-        contexa_tool.__doc__ = tool.description
+        # Get the original function
+        func = tool.func if hasattr(tool, 'func') else tool
         
-        return contexa_tool
+        # Create a simple wrapper that calls the original function
+        async def wrapper(query: str) -> str:
+            """Wrapper function for Contexa tool."""
+            try:
+                # For simplicity, we'll pass the query as a string parameter
+                # The OpenAI Agents SDK will handle the actual parameter parsing
+                if inspect.iscoroutinefunction(func):
+                    result = await func(query)
+                else:
+                    result = func(query)
+                return str(result)
+            except Exception as e:
+                return f"Error executing {tool.name}: {str(e)}"
+        
+        # Set the function metadata
+        wrapper.__name__ = tool.name
+        wrapper.__doc__ = tool.description
+        
+        # Apply the function_tool decorator
+        return function_tool(wrapper)
         
     def model(self, model: ContexaModel) -> Any:
         """Convert a Contexa model to an OpenAI model configuration.
@@ -160,7 +172,7 @@ class OpenAIAdapter(BaseAdapter):
         Example:
             ```python
             from contexa_sdk.core.model import ContexaModel
-            from contexa_sdk.adapters import openai
+            from contexa_sdk.adapters.openai import tool, agent, model
             
             model = ContexaModel(
                 provider="openai",
@@ -170,7 +182,7 @@ class OpenAIAdapter(BaseAdapter):
             )
                 
             # Convert to OpenAI model configuration
-            oa_model_info = openai.model(model)
+            oa_model_info = model(model)
             ```
         """
         # For OpenAI Agents SDK, we'll provide a standardized model info dictionary
@@ -181,9 +193,12 @@ class OpenAIAdapter(BaseAdapter):
             
         # Attempt to create an OpenAI client if the API key is available
         client = None
-        if model.config.get("api_key"):
+        config_dict = getattr(model.config, '__dict__', {}) if hasattr(model, 'config') else {}
+        api_key = config_dict.get("api_key") or getattr(model.config, 'api_key', None) if hasattr(model, 'config') else None
+        
+        if api_key:
             try:
-                client = OpenAI(api_key=model.config.get("api_key"))
+                client = OpenAI(api_key=api_key)
             except Exception:
                 # If client creation fails, we'll fall back to returning just the model name
                 pass
@@ -191,7 +206,7 @@ class OpenAIAdapter(BaseAdapter):
         return {
             "client": client,
             "model_name": model.model_name,
-            "config": model.config,
+            "config": config_dict,
             "provider": model.provider,
         }
         
@@ -218,7 +233,7 @@ class OpenAIAdapter(BaseAdapter):
             ```python
             from contexa_sdk.core.agent import ContexaAgent
             from contexa_sdk.core.model import ContexaModel
-            from contexa_sdk.adapters import openai
+            from contexa_sdk.adapters.openai import tool, agent, model
             
             agent = ContexaAgent(
                 name="Assistant",
@@ -257,9 +272,13 @@ class OpenAIAdapter(BaseAdapter):
         # Store the original Contexa agent for reference and handoff support
         openai_agent.__contexa_agent__ = agent
         
-        # Create a thread for this agent and store the conversation history
-        thread_id = memory_to_thread(agent)
-        openai_agent.__thread_id__ = thread_id
+        # Create a thread for this agent and store the conversation history (optional)
+        try:
+            thread_id = memory_to_thread(agent)
+            openai_agent.__thread_id__ = thread_id
+        except Exception:
+            # Thread creation is optional - skip if no API key or other issues
+            openai_agent.__thread_id__ = None
         
         return openai_agent
         
@@ -280,14 +299,14 @@ class OpenAIAdapter(BaseAdapter):
         Example:
             ```python
             from contexa_sdk.core.prompt import ContexaPrompt
-            from contexa_sdk.adapters import openai
+            from contexa_sdk.adapters.openai import tool, agent, model
             
             prompt = ContexaPrompt(
                 template="You are an assistant that helps with {task}."
             )
                 
             # Convert to OpenAI-compatible string
-            oa_prompt = openai.prompt(prompt)
+            oa_prompt = prompt(prompt)
             ```
         """
         # OpenAI Agents SDK typically just uses string templates
@@ -466,7 +485,7 @@ class OpenAIAdapter(BaseAdapter):
         Example:
             ```python
             from openai_agents import Agent, function_tool
-            from contexa_sdk.adapters import openai
+            from contexa_sdk.adapters.openai import tool, agent, model
             
             # Create an OpenAI agent
             @function_tool

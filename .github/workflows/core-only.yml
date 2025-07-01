@@ -1,0 +1,72 @@
+name: Core SDK Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install core dependencies only
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio
+    
+    - name: Test core imports
+      run: |
+        python -c "
+        # Test core imports
+        from contexa_sdk.core.agent import ContexaAgent, AgentMemory
+        from contexa_sdk.core.model import ContexaModel, ModelMessage, ModelResponse
+        from contexa_sdk.core.tool import ContexaTool
+        print('✓ All core imports successful')
+        "
+    
+    - name: Run core tests only
+      run: |
+        pytest tests/core/ -v --tb=short
+    
+    - name: Test basic functionality
+      run: |
+        python -c "
+        from contexa_sdk.core.agent import ContexaAgent, AgentMemory
+        from contexa_sdk.core.model import ContexaModel
+        from contexa_sdk.core.tool import ContexaTool
+        from pydantic import BaseModel
+        
+        # Test tool creation
+        class TestInput(BaseModel):
+            query: str
+        
+        @ContexaTool.register(name='test_tool', description='Test tool')
+        async def test_tool(inp: TestInput) -> str:
+            return f'Result: {inp.query}'
+        
+        # Test agent creation
+        agent = ContexaAgent(
+            name='Test Agent',
+            description='Test agent',
+            model=ContexaModel('test-model', provider='mock'),
+            tools=[test_tool.__contexa_tool__],
+            memory=AgentMemory()
+        )
+        
+        print('✓ Basic functionality test passed')
+        print(f'Agent: {agent.name}')
+        print(f'Tools: {len(agent.tools)}')
+        " 

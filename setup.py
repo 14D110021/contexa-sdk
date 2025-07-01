@@ -6,43 +6,50 @@ setup(
     packages=find_packages(),
     install_requires=[
         "pydantic>=2.0.0",
+        "httpx>=0.24.0",  # For MCP client
+        "aiohttp>=3.8.0",  # For async HTTP
     ],
     extras_require={
         "langchain": [
             "langchain>=0.1.0",
-            "langchain-openai>=0.0.1",
-            "langgraph>=0.0.15",
+            "langchain-community>=0.0.1",
         ],
         "crewai": [
-            "crewai>=0.110.0",
+            "crewai>=0.28.0",  # Use realistic version
         ],
         "openai": [
-            "openai>=1.2.0",
-            "openai-agents>=0.0.3",
+            "openai>=1.0.0",
+            "openai-agents>=0.1.0",  # Real OpenAI Agents SDK
         ],
         "google-genai": [
             "google-generativeai>=0.3.0",
         ],
-        "google-adk": [
-            "google-adk>=0.5.0",
-        ],
         "google": [
             "google-generativeai>=0.3.0",
-            "google-adk>=0.5.0",
         ],
         "viz": [
             "graphviz>=0.20.1",
         ],
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-asyncio>=0.18.0",
+            "pytest-cov>=4.0.0",
+            "black>=23.0.0",
+            "flake8>=6.0.0",
+            "pydocstyle>=6.0.0",
+            "safety>=2.0.0",
+            "bandit>=1.7.0",
+        ],
         "all": [
             "langchain>=0.1.0",
-            "langchain-openai>=0.0.1",
-            "langgraph>=0.0.15",
-            "crewai>=0.110.0",
-            "openai>=1.2.0",
-            "openai-agents>=0.0.3",
+            "langchain-community>=0.0.1",
+            "crewai>=0.28.0",
+            "openai>=1.0.0",
+            "openai-agents>=0.1.0",
             "google-generativeai>=0.3.0",
-            "google-adk>=0.5.0",
             "graphviz>=0.20.1",
+            "httpx>=0.24.0",
+            "aiohttp>=3.8.0",
         ],
     },
     python_requires=">=3.8",
