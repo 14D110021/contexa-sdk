@@ -54,7 +54,7 @@ setup(
     },
     python_requires=">=3.8",
     author="Rupesh Raj",
-    author_email="contact@rupeshraj.dev",
+    author_email="rupesh@contexaai.com",
     description="SDK for building context-aware multi-agent systems with framework interoperability",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
